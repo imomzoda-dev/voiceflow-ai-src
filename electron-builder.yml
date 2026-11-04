@@ -1,0 +1,84 @@
+appId: ai.voiceflow.desktop
+productName: VoiceFlow AI
+copyright: Copyright © 2026 Imomzoda Mehriddin
+directories:
+  buildResources: resources/build
+  output: release
+files:
+  - out/**/*
+  - package.json
+  - "!**/*.map"
+  - "!**/{test,tests,__tests__,docs,example,examples}/**"
+extraResources:
+  - from: database/migrations
+    to: migrations
+  - from: resources/icons
+    to: icons
+# The libuiohook keyboard hook is a native N-API module: it must stay a real file outside app.asar.
+asarUnpack:
+  - "**/node_modules/uiohook-napi/**"
+# uiohook-napi ships prebuilt binaries for every platform/arch; nothing needs compiling.
+npmRebuild: false
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: resources/icons/icon.png
+  artifactName: VoiceFlow-AI-Setup-${version}.${ext}
+  # No code-signing certificate is configured: the installer is unsigned (SmartScreen may warn).
+  signAndEditExecutable: true
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: VoiceFlow AI
+  uninstallDisplayName: VoiceFlow AI
+  # Documents, models and settings (%APPDATA%\VoiceFlow AI) survive uninstall and updates.
+  deleteAppDataOnUninstall: false
+  multiLanguageInstaller: true
+  installerLanguages: [en_US, ru_RU]
+  license: LICENSE.txt
+
+# macOS (Apple Silicon and Intel) is built on GitHub's macOS runner (.github/workflows/release.yml).
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.productivity
+  icon: resources/icons/icon.png
+  artifactName: VoiceFlow-AI-${version}-${arch}-mac.${ext}
+  # No Apple Developer ID: the bundle is ad-hoc signed ("-"), which Apple Silicon requires to run an
+  # app at all. In-app updates swap the bundle themselves (electron/services/updates/mac-update.ts).
+  identity: "-"
+  hardenedRuntime: false
+  gatekeeperAssess: false
+  darkModeSupport: true
+  minimumSystemVersion: "12.0"
+  extendInfo:
+    NSMicrophoneUsageDescription: VoiceFlow AI records your voice only while you hold or toggle the dictation key, to turn speech into text.
+    NSAppleEventsUsageDescription: VoiceFlow AI pastes dictated text into the app you are typing in.
+    LSApplicationCategoryType: public.app-category.productivity
+dmg:
+  artifactName: VoiceFlow-AI-${version}-${arch}.${ext}
+  title: VoiceFlow AI ${version}
+  writeUpdateInfo: false
+  contents:
+    - x: 140
+      y: 190
+    - x: 400
+      y: 190
+      type: link
+      path: /Applications
+  window:
+    width: 540
+    height: 380
+
+# Self-updates: the app reads latest.yml / latest-mac.yml from GitHub Releases of this repository.
+publish:
+  provider: github
+  owner: imomzoda-dev
+  repo: VoiceFlowAI
+  releaseType: release

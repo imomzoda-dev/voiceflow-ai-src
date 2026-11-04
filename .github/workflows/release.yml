@@ -1,0 +1,140 @@
+# Release builds of VoiceFlow AI.
+#  - macOS (Apple Silicon + Intel) on GitHub's macOS runner: DMG + ZIP (ad-hoc signed) + latest-mac.yml
+#  - Windows x64: NSIS installer + latest.yml
+# Each job type-checks, runs the unit tests, packages the app, verifies the package and starts the
+# packaged app through the e2e smoke test. Installers are uploaded as workflow artifacts and attached
+# to the public release (imomzoda-dev/VoiceFlowAI) by the maintainer.
+name: Release builds
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  macos:
+    name: macOS (arm64 + x64)
+    runs-on: macos-15
+    timeout-minutes: 60
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Package (DMG + ZIP, ad-hoc signed)
+        run: npx electron-builder --mac --arm64 --x64 --publish never
+
+      - name: Check the app bundles
+        run: |
+          set -euo pipefail
+          for pair in "mac-arm64:arm64" "mac:x86_64"; do
+            DIR="${pair%%:*}"; WANT="${pair##*:}"
+            APP="release/$DIR/VoiceFlow AI.app"
+            echo "== $APP (want $WANT)"
+            codesign --verify --deep --strict --verbose=2 "$APP"
+            codesign -dv "$APP" 2>&1 | grep -E 'Signature=adhoc|Identifier='
+            test "$(lipo -archs "$APP/Contents/MacOS/VoiceFlow AI")" = "$WANT" || { echo "wrong arch"; exit 1; }
+            NODE="$(find "$APP/Contents/Resources/app.asar.unpacked" -path "*uiohook-napi/prebuilds/darwin-$( [ "$WANT" = x86_64 ] && echo x64 || echo arm64)/*.node" | head -n 1)"
+            test -n "$NODE" || { echo "uiohook prebuild missing"; exit 1; }
+            lipo -archs "$NODE" | grep -qw "$WANT" || { echo "native module for another arch: $NODE"; exit 1; }
+            /usr/libexec/PlistBuddy -c 'Print :NSMicrophoneUsageDescription' "$APP/Contents/Info.plist"
+            test -f "$APP/Contents/Resources/app-update.yml" || { echo "app-update.yml missing"; exit 1; }
+            test -d "$APP/Contents/Resources/migrations" || { echo "migrations missing"; exit 1; }
+          done
+          ls -la release/*.dmg release/*.zip release/latest-mac.yml
+          for d in release/*.dmg; do hdiutil verify "$d"; done
+
+      # The app updates itself from these ZIPs (electron/services/updates/mac-update.ts): same checks here.
+      - name: Check the self-update packages
+        run: |
+          set -euo pipefail
+          YML=release/latest-mac.yml
+          cat "$YML"
+          VERSION="$(sed -n 's/^version: //p' "$YML")"
+          for ARCH in arm64 x64; do
+            ZIP="release/$(sed -n 's/^  - url: //p' "$YML" | grep -- "-${ARCH}-mac.zip$" | head -n 1)"
+            WANT="$(awk -v z="$(basename "$ZIP")" '$0 ~ "url: "z {f=1; next} f && /sha512:/ {print $2; exit}' "$YML")"
+            GOT="$(shasum -a 512 "$ZIP" | cut -d' ' -f1 | xxd -r -p | base64)"
+            test "$WANT" = "$GOT" || { echo "sha512 mismatch for $ZIP"; exit 1; }
+            WORK="$(mktemp -d)"
+            /usr/bin/ditto -x -k "$ZIP" "$WORK/new"
+            NEW="$(find "$WORK/new" -maxdepth 1 -name '*.app' | head -n 1)"
+            test "$(/usr/bin/plutil -extract CFBundleShortVersionString raw -o - "$NEW/Contents/Info.plist")" = "$VERSION"
+            /usr/bin/codesign --verify --deep --strict "$NEW"
+            echo "self-update package OK: $ZIP ($VERSION)"
+          done
+
+      - name: Packaged app test
+        run: npx playwright test tests/e2e/packaged.spec.ts
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: voiceflow-mac
+          if-no-files-found: error
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.blockmap
+            release/latest-mac.yml
+
+  windows:
+    name: Windows (x64)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Package (NSIS)
+        run: npm run dist:win
+
+      - name: Packaged app test
+        run: npx playwright test tests/e2e/packaged.spec.ts
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: voiceflow-windows
+          if-no-files-found: error
+          path: |
+            release/*.exe
+            release/*.exe.blockmap
+            release/latest.yml

@@ -1,0 +1,71 @@
+VOICEFLOW AI - END USER LICENSE AGREEMENT (EULA)
+
+Copyright (c) 2026 Imomzoda Mehriddin. All rights reserved.
+
+Please read this agreement carefully. By installing, copying or using
+VoiceFlow AI (the "Software") you agree to be bound by this agreement.
+If you do not agree, do not install or use the Software.
+
+1. LICENSE GRANT
+   The author grants you a free, non-exclusive, non-transferable,
+   revocable license to install and use the Software on devices you own
+   or control, for personal and commercial purposes, in accordance with
+   this agreement.
+
+2. OWNERSHIP
+   The Software, its source code, design, the name "VoiceFlow AI", logo
+   and documentation are the property of the author and are protected by
+   copyright and other intellectual property laws. This agreement does not
+   transfer any ownership rights to you.
+
+3. RESTRICTIONS
+   You may not: (a) sell, rent, lease or sublicense the Software;
+   (b) modify, decompile or reverse engineer the Software, except where
+   such restriction is prohibited by law or by the license of an included
+   open-source component; (c) remove copyright notices; (d) distribute
+   modified copies under the VoiceFlow AI name.
+
+4. YOUR DATA AND PRIVACY
+   Documents, dictation history, the personal dictionary and settings are
+   stored only on your device. Audio is recorded only while you hold or
+   toggle the dictation key and is not kept unless you turn on "Save
+   recordings". With local speech recognition (whisper.cpp) and a local AI
+   server, no audio or text leaves your device. Audio or text is sent to a
+   cloud provider (for example OpenAI, Groq or Anthropic) only after you
+   add that provider and allow cloud processing; that provider's own terms
+   and privacy policy then apply. API keys are encrypted with the
+   operating system's secure storage (Windows DPAPI / macOS Keychain).
+
+5. UPDATES
+   The Software checks GitHub Releases of imomzoda-dev/VoiceFlowAI for new
+   versions (this can be turned off in Settings -> About). Updates are
+   downloaded and installed only after you confirm, and every update file
+   is verified with its SHA-512 checksum before installation.
+
+6. THIRD-PARTY COMPONENTS
+   The Software includes open-source components under their own licenses,
+   including: Electron, Chromium and Node.js (MIT/BSD); React (MIT);
+   Tiptap/ProseMirror (MIT); Radix UI (MIT); Motion (MIT); Lucide (ISC);
+   Drizzle ORM (Apache-2.0); docx (MIT); mammoth (BSD-2-Clause);
+   i18next (MIT); uiohook-napi (MIT) and libuiohook (GNU LGPL-3.0, shipped
+   as a separate, replaceable native library in app.asar.unpacked).
+   whisper.cpp (MIT) and Whisper models (MIT, OpenAI) are downloaded only
+   when you choose to, from their official sources.
+
+7. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+   Speech recognition and AI text correction can make mistakes; always
+   review important text before using it.
+
+8. LIMITATION OF LIABILITY
+   IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR ITS
+   USE, INCLUDING LOSS OF DATA.
+
+9. TERMINATION
+   This license ends automatically if you breach it. You must then delete
+   all copies of the Software.
+
+Contact: https://github.com/imomzoda-dev/VoiceFlowAI/issues
