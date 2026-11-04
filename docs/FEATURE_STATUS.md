@@ -1,4 +1,4 @@
-# Feature status — VoiceFlow AI 1.0.0
+# Feature status — VoiceFlow AI 1.0.1
 
 Checked on **Windows 11 x64** (Electron 45.2, Node 24) on 2026-11-04. **Nothing has been run on macOS yet.**
 
@@ -62,6 +62,17 @@ What the unit tests cover:
 | Paste into the active app (clipboard + Ctrl/Cmd+V, clipboard restored) | 🟡 Built; needs real-world checks in Word/Chrome/Telegram/VS Code. Known OS limits: elevated (admin) windows on Windows, secure input fields |
 | Mic unplugged / recorder crash / no audio / silence | ✅ Handled in code and unit tests · 🟡 physical unplug not tested |
 | Tray / menu bar menu | ✅ Created · 🟡 menu items clicked manually only |
+
+## 1.0.1 additions
+
+| Feature | Status |
+|---|---|
+| Language picker on the dictation key (your 3 languages, ← → / 1-3 / click, F12 confirms, countdown 2–8 s) | ✅ Unit tests and real-speech E2E (the picker chose Russian / English) · 🟡 the arrow keys still need a check in Chrome/Word by hand |
+| Recognition restricted to your three languages; all ~100 Whisper languages selectable | ✅ |
+| Live typing: phrase-by-phrase insertion after each pause | ✅ Unit tests (order, spacing, silent tail) and a real English run split into 2 phrases · 🟡 pasting into other apps by hand |
+| Text always left on the clipboard (also when pasting fails) | ✅ Unit tests |
+| whisper-server engine (model stays loaded, prewarmed while choosing) | ✅ Real runs: ready in ≈0.5 s, ≈1.8 s per phrase with the Base model on CPU |
+| Installer shows "Update x → y" over an installed version | ✅ Seen on this PC: "Обновление VoiceFlow AI — Версия 0.1.0 → 1.0.1" with «Обновить» (closed without installing) |
 
 ## Speech recognition
 
