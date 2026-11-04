@@ -1,4 +1,4 @@
-# Feature status — VoiceFlow AI 0.1.0
+# Feature status — VoiceFlow AI 1.0.0
 
 Checked on **Windows 11 x64** (Electron 45.2, Node 24) on 2026-11-04. **Nothing has been run on macOS yet.**
 
@@ -107,16 +107,16 @@ What the unit tests cover:
 | Settings: all sections from the brief | ✅ |
 | Onboarding (10 steps) | ✅ Built; first step covered by E2E |
 | Localisation en / ru / tg (type-checked for completeness) | ✅ |
-| Themes light/dark/system, 3 accents, compact mode, reduced motion | ✅ |
+| iOS-style design system: themes light/dark/system, 6 accents, compact mode, reduced motion, Dynamic-Island widget, ⌘K command palette, macOS menu bar and vibrancy | ✅ Windows · 🟡 macOS vibrancy to be seen on a Mac |
 | Security: contextIsolation, sandbox, no nodeIntegration, CSP, sender checks, zod validation, navigation/window.open blocked, https-only providers, no eval | ✅ (E2E) |
 | Secrets in DPAPI/Keychain via safeStorage | ✅ Windows · 🟡 macOS Keychain |
 | Backups (manual, daily/weekly schedule, restore, export settings; no keys) | ✅ |
 | Launch at login, close to tray | 🟡 Built; check after installing |
-| Auto-update | ⬜ No update feed configured, so the app honestly reports "not configured" |
+| In-app updates from GitHub Releases (sidebar Update button, SHA-512 check, Restart and update; macOS bundle swap) | ✅ The packaged Windows app reads the live feed of `imomzoda-dev/VoiceFlowAI` (E2E with `VOICEFLOW_CHECK_FEED=1`) · 🟡 an actual 1.0.0 → 1.0.1 install, and the macOS swap, are verified with the next release |
 | Code signing / notarization | ⬜ Needs your certificates |
 | Rust native helper | ⬜ No Rust toolchain on this machine; libuiohook is used behind an interface (see `native/README.md`) |
 | Live streaming (partial) transcription | ⬜ Not implemented; recognition runs after release |
-| macOS build and test | ⬜ Must be done on a Mac |
+| macOS build and test | 🟡 CI workflow ready (DMG + ZIP for arm64 and x64, bundle + update-package checks, packaged-app test); waiting for GitHub Actions billing on the account |
 
 ## Needs your action / a target-OS check
 

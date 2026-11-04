@@ -31,6 +31,12 @@ test('packaged app starts, runs migrations and loads the native hook', async () 
     const upd = await page!.evaluate(() => window.voiceflow.updates.get())
     expect(upd.phase).not.toBe('unsupported')
     expect(upd.currentVersion).toBe(info.version)
+    // Opt-in: ask the real GitHub Releases feed (network). The published version is this one or newer.
+    if (process.env.VOICEFLOW_CHECK_FEED) {
+      const checked = await page!.evaluate(() => window.voiceflow.updates.check())
+      console.log('update check:', JSON.stringify(checked))
+      expect(['not-available', 'available']).toContain(checked.phase)
+    }
   } finally {
     await app.evaluate(({ app: a }) => a.exit(0)).catch(() => undefined)
     await app.close().catch(() => undefined)

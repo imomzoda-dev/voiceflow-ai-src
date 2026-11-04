@@ -7,6 +7,7 @@ A desktop voice-typing and document workspace for Windows and macOS. Hold a hotk
 - Feature status (what works, what still needs target-OS checks): [docs/FEATURE_STATUS.md](docs/FEATURE_STATUS.md)
 - Architecture and decisions: [docs/IMPLEMENTATION_PLAN.md](docs/IMPLEMENTATION_PLAN.md) · [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Native layer: [native/README.md](native/README.md)
+- Releases and updates: [docs/RELEASING.md](docs/RELEASING.md). Public downloads: <https://github.com/imomzoda-dev/VoiceFlowAI/releases>
 
 ---
 
