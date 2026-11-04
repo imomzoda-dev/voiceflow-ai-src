@@ -1,4 +1,4 @@
-# Feature status — VoiceFlow AI 1.0.1
+# Feature status — VoiceFlow AI 1.0.2
 
 Checked on **Windows 11 x64** (Electron 45.2, Node 24) on 2026-11-04. **Nothing has been run on macOS yet.**
 
@@ -73,6 +73,16 @@ What the unit tests cover:
 | Text always left on the clipboard (also when pasting fails) | ✅ Unit tests |
 | whisper-server engine (model stays loaded, prewarmed while choosing) | ✅ Real runs: ready in ≈0.5 s, ≈1.8 s per phrase with the Base model on CPU |
 | Installer shows "Update x → y" over an installed version | ✅ Seen on this PC: "Обновление VoiceFlow AI — Версия 0.1.0 → 1.0.1" with «Обновить» (closed without installing) |
+
+## 1.0.2 fixes
+
+| Fix | Status |
+|---|---|
+| "Speech not detected" shown while a long phrase was still being recognised (15 s watchdog fired during slow CPU recognition) | ✅ The watchdog now only fires when the recorder never delivers audio (new error "recorder failed"); unit-tested |
+| Speed: 10 s encoder window (`--audio-ctx 512`), phrases cut at pauses and at ≤ 9.5 s at the quietest moment, up to 16 threads | ✅ Large v3 Turbo on an i9-9900K: 8.7 s phrase ≈ 6 s (was 20–30 s), identical text |
+| NVIDIA GPU acceleration (CUDA 12.4 build, one-click install, automatic CPU fallback) | ✅ GTX 1050 Ti: 8.7 s phrase in 0.78 s with Large v3 Turbo, 0.12–0.3 s with Base; real-speech E2E on GPU and CPU |
+| Engine runs at below-normal priority, warms up on install / model change | ✅ Real-speech E2E with `CUDA_CACHE_DISABLE=1` (cold kernel compile during dictation): no audio lost |
+| Non-live mode: whole text inserted once at the end | ✅ Unit tests |
 
 ## Speech recognition
 

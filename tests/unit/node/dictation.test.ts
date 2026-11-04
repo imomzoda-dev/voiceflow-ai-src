@@ -11,7 +11,7 @@ import { encodeWav } from '../../../shared/audio'
 const wav = () => Buffer.from(encodeWav(new Float32Array(16000).map((_, i) => Math.sin(i / 10) * 0.4)))
 const tick = () => new Promise((r) => setTimeout(r, 5))
 
-function setup(over: { settings?: Partial<AppSettings>; transcript?: Partial<TranscriptionResult> | Error; processor?: DictationDeps['processor']; editorFocused?: boolean; preflight?: Awaited<ReturnType<DictationDeps['preflight']>>; held?: () => boolean } = {}) {
+function setup(over: { settings?: Partial<AppSettings>; transcript?: Partial<TranscriptionResult> | Error; processor?: DictationDeps['processor']; editorFocused?: boolean; preflight?: Awaited<ReturnType<DictationDeps['preflight']>>; held?: () => boolean; slowMs?: number } = {}) {
   const settings: AppSettings = structuredClone({ ...DEFAULT_SETTINGS, ...over.settings })
   settings.voice.minHoldMs = 0
   settings.voice.languagePicker = false
@@ -25,6 +25,7 @@ function setup(over: { settings?: Partial<AppSettings>; transcript?: Partial<Tra
     copyText: vi.fn(async (_t: string) => {})
   }
   const transcribe = vi.fn(async (): Promise<TranscriptionResult> => {
+    if (over.slowMs) await new Promise((r) => setTimeout(r, over.slowMs))
     if (over.transcript instanceof Error) throw over.transcript
     return { text: 'привет мир', language: 'ru', provider: 'whisper-cpp', model: 'base', ...over.transcript }
   })
@@ -50,7 +51,7 @@ function setup(over: { settings?: Partial<AppSettings>; transcript?: Partial<Tra
     dirs: { temp: dir, audio: dir },
     preflight: async () => over.preflight ?? { ok: true },
     isDictateHeld: over.held ?? (() => true),
-    timings: { successHoldMs: 20, errorHoldMs: 20, recorderReadyTimeoutMs: 2000, audioTimeoutMs: 2000 }
+    timings: { successHoldMs: 20, errorHoldMs: 20, recorderReadyTimeoutMs: 2000, audioTimeoutMs: over.slowMs ? 60 : 2000 }
   })
   const phases: string[] = []
   svc.on('state', (s) => phases.push(s.phase))
@@ -280,5 +281,23 @@ describe('DictationService', () => {
     await speak(svc, recorder)
     expect(output.copyText).toHaveBeenCalledWith('Привет мир.')
     expect(svc.getState()).toMatchObject({ phase: 'success', message: 'insert-failed' })
+  })
+
+  it('a slow engine (recognition longer than the recorder watchdog) still succeeds — regression for “no speech detected”', async () => {
+    const { svc, recorder, output } = setup({ slowMs: 200 })
+    await speak(svc, recorder)
+    expect(svc.getState().phase).toBe('success')
+    expect(output.insertExternal).toHaveBeenCalledWith('Привет мир.', { restoreClipboard: false })
+  })
+
+  it('a recorder that never delivers the last audio fails with its own message, not “no speech”', async () => {
+    const { svc, recorder } = setup({ slowMs: 1 })
+    const errors: (string | null)[] = []
+    svc.on('state', (st) => st.phase === 'error' && errors.push(st.errorCode))
+    await svc.start()
+    svc.recorderReady(recorder.start.mock.calls[0][0].sessionId)
+    await svc.stop()
+    await new Promise((r) => setTimeout(r, 120))
+    expect(errors).toEqual(['recorder-failed'])
   })
 })

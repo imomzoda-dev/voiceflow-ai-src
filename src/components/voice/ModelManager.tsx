@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Download, Check, Trash2, FolderOpen, X, ShieldCheck, ShieldAlert, Cpu, FileSearch } from 'lucide-react'
-import type { DownloadProgress, WhisperBinaryStatus, WhisperModelInfo } from '@shared/types'
+import { Download, Check, Trash2, FolderOpen, X, ShieldCheck, ShieldAlert, Cpu, FileSearch, Zap, Gauge } from 'lucide-react'
+import type { DownloadProgress, EngineInfo, WhisperBinaryStatus, WhisperModelInfo } from '@shared/types'
 import { api, cn, formatBytes } from '@/lib/utils'
 import { useSettings, toast } from '@/stores'
 import { Button } from '@/components/ui/button'
@@ -26,7 +26,9 @@ export function ModelManager({ compact = false }: { compact?: boolean }) {
   const [progress, setProgress] = useState<Record<string, DownloadProgress>>({})
   const isMac = navigator.userAgent.includes('Mac')
 
+  const [engine, setEngine] = useState<EngineInfo | null>(null)
   const reload = () => {
+    void api().models.engineInfo().then(setEngine)
     void api().models.catalog().then(setModels)
     void api().models.binaryStatus().then(setBinary)
   }
@@ -52,6 +54,9 @@ export function ModelManager({ compact = false }: { compact?: boolean }) {
   const pct = (p?: DownloadProgress) => (p?.totalBytes ? Math.round((p.receivedBytes / p.totalBytes) * 100) : null)
   const binProgress = progress['whisper-binary']
   const binBusy = binProgress?.state === 'downloading'
+  const gpuProgress = progress['whisper-gpu']
+  const gpuBusy = gpuProgress?.state === 'downloading'
+  const slow = !!engine?.lastMs && !!engine.lastAudioMs && engine.lastMs > engine.lastAudioMs * 1.2
 
   return (
     <div className="flex flex-col gap-3">
@@ -79,6 +84,43 @@ export function ModelManager({ compact = false }: { compact?: boolean }) {
           <FileSearch size={13} /> {t('settings.recognition.chooseBinary')}
         </Button>
       </div>
+
+      {binary?.nvidiaGpu && (
+        <div className="flex items-center gap-3 rounded-[12px] border border-border px-3 py-2.5">
+          <Zap size={16} className="shrink-0 text-success" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-medium text-fg">{t('settings.recognition.gpuTitle')}</div>
+            <div className="truncate text-[11.5px] text-muted">{binary.gpuPath ? t('settings.recognition.gpuInstalled', { gpu: binary.nvidiaGpu }) : t('settings.recognition.gpuHint', { gpu: binary.nvidiaGpu })}</div>
+            {gpuBusy && (
+              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-3">
+                <div className="h-full bg-success transition-[width]" style={{ width: `${pct(gpuProgress) ?? 3}%` }} />
+              </div>
+            )}
+          </div>
+          {binary.gpuPath ? (
+            <Badge tone="success">{t('settings.recognition.installed')}</Badge>
+          ) : gpuBusy ? (
+            <Button size="sm" variant="ghost" onClick={() => void api().models.cancel('whisper-gpu')}>
+              <X size={13} /> {t('common.cancel')}
+            </Button>
+          ) : (
+            <Button size="sm" className="bg-success text-white" onClick={() => void api().models.installBinary('cuda').then((r) => (r.ok ? reload() : r.error !== 'Cancelled' && toast.error(r.error ?? '')))}>
+              <Download size={13} /> {t('settings.recognition.gpuInstall')}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {engine?.backend && (
+        <div className={cn('flex items-start gap-2 rounded-[10px] px-3 py-2 text-[12px] leading-snug', slow ? 'bg-warning-soft text-fg' : 'bg-fill text-muted')}>
+          <Gauge size={14} className={cn('mt-px shrink-0', slow ? 'text-warning' : 'text-muted')} />
+          <div>
+            {t('settings.recognition.engineOn', { device: engine.backend === 'gpu' ? `GPU${engine.device ? ` · ${engine.device}` : ''}` : 'CPU' })}
+            {engine.lastMs && engine.lastAudioMs ? ` · ${t('settings.recognition.lastPhrase', { audio: (engine.lastAudioMs / 1000).toFixed(1), time: (engine.lastMs / 1000).toFixed(1) })}` : ''}
+            {slow && <div className="mt-0.5 font-medium">{binary?.nvidiaGpu && !binary.gpuPath ? t('settings.recognition.slowGpuHint') : t('settings.recognition.slowHint')}</div>}
+          </div>
+        </div>
+      )}
 
       {!compact && <p className="text-[12px] leading-relaxed text-muted">{t('settings.recognition.modelsHint')}</p>}
 

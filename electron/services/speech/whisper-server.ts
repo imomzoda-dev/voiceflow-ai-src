@@ -8,17 +8,21 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createServer } from 'node:net'
 import { existsSync } from 'node:fs'
-import { cpus } from 'node:os'
+import { constants as osConstants, cpus, setPriority } from 'node:os'
 import { dirname, join } from 'node:path'
 import { SpeechError, cleanTranscript, type SpeechProvider, type TranscriptionRequest, type TranscriptionResult } from './types'
 import { normalizeLanguageCode } from '../../../shared/languages'
+import { encodeWav } from '../../../shared/audio'
 import { createLogger } from '../../main/logger'
 
 const log = createLogger('whisper-server')
 const IDLE_MS = 10 * 60_000
 
 export interface ServerConfig {
+  /** Preferred build (e.g. CUDA). */
   cliPath: string
+  /** CPU build to fall back to when the preferred build cannot start (missing driver, old GPU…). */
+  fallbackCliPath?: string | null
   modelPath: string
   modelId: string
   threads: number
@@ -58,6 +62,8 @@ export class WhisperServerManager {
   private ready: Promise<void> | null = null
   private idle: NodeJS.Timeout | null = null
   private stderrTail = ''
+  private failedCli = new Set<string>()
+  info: { backend: 'gpu' | 'cpu' | null; device: string | null; lastAudioMs: number | null; lastMs: number | null } = { backend: null, device: null, lastAudioMs: null, lastMs: null }
 
   isRunning() {
     return !!this.child && this.child.exitCode === null
@@ -67,8 +73,20 @@ export class WhisperServerManager {
     return `${c.cliPath}|${c.modelPath}|${c.threads}|${c.useGpu}`
   }
 
-  /** Starts (or reuses) the server for this configuration and resolves when it accepts requests. */
+  /** Starts (or reuses) the server; a GPU build that cannot start is remembered and the CPU build is used. */
   async ensure(c: ServerConfig): Promise<number> {
+    const usable = !this.failedCli.has(c.cliPath) ? c : c.fallbackCliPath ? { ...c, cliPath: c.fallbackCliPath, fallbackCliPath: null } : c
+    try {
+      return await this.ensureExact(usable)
+    } catch (e) {
+      if (!usable.fallbackCliPath) throw e
+      log.warn('preferred whisper build failed to start; falling back to CPU', { message: (e as Error).message })
+      this.failedCli.add(usable.cliPath)
+      return this.ensureExact({ ...usable, cliPath: usable.fallbackCliPath, fallbackCliPath: null })
+    }
+  }
+
+  private async ensureExact(c: ServerConfig): Promise<number> {
     this.touch()
     const key = this.configKey(c)
     if (this.ready && this.key === key && this.isRunning()) {
@@ -80,12 +98,22 @@ export class WhisperServerManager {
     if (!bin) throw new SpeechError('binary-missing', 'whisper-server is not available')
     this.key = key
     this.port = await freePort()
-    const threads = c.threads > 0 ? c.threads : Math.max(1, Math.min(8, cpus().length - 1))
-    const args = ['-m', c.modelPath, '--host', '127.0.0.1', '--port', String(this.port), '-t', String(threads), '-l', 'auto']
+    // Hyper-threads help whisper.cpp's encoder (≈15% faster with 16 than 8 threads on an i9-9900K).
+    const threads = c.threads > 0 ? c.threads : Math.max(1, Math.min(16, cpus().length - 1))
+    // --audio-ctx 512 = 10.24 s encoder window (phrases are cut to ≤ 9.5 s by the recorder):
+    // ~4× faster than the default 30 s window on CPU, identical transcripts in our tests.
+    const args = ['-m', c.modelPath, '--host', '127.0.0.1', '--port', String(this.port), '-t', String(threads), '-l', 'auto', '-ac', '512']
     if (!c.useGpu) args.push('-ng')
     log.info('starting whisper-server', { model: c.modelId, port: this.port, threads })
     const child = spawn(bin, args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] })
     this.child = child
+    // Below-normal priority: recognition (all cores, or the one-time CUDA kernel compile) must never
+    // starve microphone capture — with live typing the next phrase is recorded while one is recognised.
+    try {
+      if (child.pid) setPriority(child.pid, osConstants.priority.PRIORITY_BELOW_NORMAL)
+    } catch (e) {
+      log.warn('could not lower whisper-server priority', { message: (e as Error).message })
+    }
     this.stderrTail = ''
     child.stderr?.setEncoding('utf8')
     child.stderr?.on('data', (d: string) => {
@@ -119,8 +147,28 @@ export class WhisperServerManager {
       this.stop()
       throw e
     }
-    log.info('whisper-server ready')
+    const cuda = /using (CUDA\d*) backend|ggml_cuda_init: found [1-9]/i.test(this.stderrTail)
+    const dev = /Device \d+: ([^,\n]+), compute capability/i.exec(this.stderrTail)?.[1]?.trim() ?? null
+    this.info = { ...this.info, backend: cuda ? 'gpu' : 'cpu', device: cuda ? dev : null }
+    log.info('whisper-server ready', { backend: this.info.backend, device: this.info.device })
+    // The first inference compiles GPU kernels / fills caches (≈ 1.5 s extra on a GTX 1050 Ti):
+    // do it now on 1 s of silence, while the user is still choosing a language.
+    void this.warmUp(port)
     return port
+  }
+
+  private async warmUp(port: number) {
+    try {
+      const form = new FormData()
+      form.append('file', new Blob([new Uint8Array(encodeWav(new Float32Array(16_000)))], { type: 'audio/wav' }), 'warmup.wav')
+      form.append('response_format', 'json')
+      form.append('language', 'en')
+      const started = Date.now()
+      await fetch(`http://127.0.0.1:${port}/inference`, { method: 'POST', body: form, signal: AbortSignal.timeout(60_000) })
+      log.info('whisper-server warmed up', { ms: Date.now() - started })
+    } catch {
+      /* best effort */
+    }
   }
 
   private touch() {
@@ -140,7 +188,8 @@ export class WhisperServerManager {
     form.append('language', req.language ?? 'auto')
     form.append('temperature', '0')
     if (req.prompt) form.append('prompt', req.prompt)
-    const timeout = AbortSignal.timeout(Math.max(60_000, req.durationMs * 6))
+    const timeout = AbortSignal.timeout(Math.max(120_000, req.durationMs * 12))
+    const started = Date.now()
     let res: Response
     try {
       res = await fetch(`http://127.0.0.1:${port}/inference`, { method: 'POST', body: form, signal: AbortSignal.any([req.signal, timeout]) })
@@ -151,6 +200,8 @@ export class WhisperServerManager {
     }
     this.touch()
     if (!res.ok) throw new SpeechError('transcription-failed', `whisper-server returned HTTP ${res.status}`)
+    this.info = { ...this.info, lastAudioMs: Math.round(req.durationMs), lastMs: Date.now() - started }
+    log.info('Transcribed', { ms: this.info.lastMs, audioMs: this.info.lastAudioMs, backend: this.info.backend })
     const j = (await res.json()) as VerboseJson
     // `text` joins segments with newlines that can split a word ("расп\nределили"): join segments instead.
     const raw = j.segments?.length ? j.segments.map((s) => s.text ?? '').join('') : (j.text ?? '').replace(/\n/g, '')

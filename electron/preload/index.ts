@@ -84,6 +84,7 @@ const api: VoiceFlowApi = {
     onProgress: (cb) => on(EVT.modelProgress, cb),
     binaryStatus: inv('models:binaryStatus') as VoiceFlowApi['models']['binaryStatus'],
     installBinary: inv('models:installBinary') as VoiceFlowApi['models']['installBinary'],
+    engineInfo: inv('models:engineInfo') as VoiceFlowApi['models']['engineInfo'],
     chooseBinary: inv('models:chooseBinary') as VoiceFlowApi['models']['chooseBinary'],
     openFolder: inv('models:openFolder') as VoiceFlowApi['models']['openFolder']
   },

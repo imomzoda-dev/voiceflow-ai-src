@@ -55,7 +55,14 @@ export function registerAudioIpc(ctx: AppContext) {
   handle('models:cancel', z.tuple([z.string().max(64)]), (_e, id) => ctx.localSpeech.cancel(id))
   handle('models:remove', z.tuple([z.string().max(64)]), (_e, id) => ctx.localSpeech.remove(id))
   handle('models:binaryStatus', z.tuple([]), () => ctx.localSpeech.binaryStatus())
-  handle('models:installBinary', z.tuple([]), () => ctx.localSpeech.installBinary())
+  handle('models:installBinary', z.tuple([z.enum(['cpu', 'cuda']).optional()]), async (_e, v) => {
+    const r = await ctx.localSpeech.installBinary(v ?? 'cpu')
+    // Start the new engine now: the first GPU run compiles CUDA kernels once (several seconds),
+    // which should happen here, not during the user's first dictation.
+    if (r.ok) void ctx.speechProvider().then((p) => p.prewarm?.()).catch(() => undefined)
+    return r
+  })
+  handle('models:engineInfo', z.tuple([]), () => ctx.whisperServer.info)
   handle('models:chooseBinary', z.tuple([]), async () => {
     const opts: Electron.OpenDialogOptions = {
       properties: ['openFile'],

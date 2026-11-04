@@ -98,6 +98,8 @@ interface Session {
   finished: boolean
   /** Any phrase had real sound in it (otherwise the microphone is probably muted). */
   heardAudio: boolean
+  finalArrived: boolean
+  finalTimer: NodeJS.Timeout | null
 }
 
 /** Joins phrases the way they were inserted: a space between them unless the next starts with punctuation. */
@@ -160,6 +162,8 @@ export class DictationService extends EventEmitter {
     if (!sess) return
     for (const t of sess.timers) clearTimeout(t)
     sess.timers = []
+    if (sess.finalTimer) clearTimeout(sess.finalTimer)
+    sess.finalTimer = null
     if (sess.pickTimer) clearTimeout(sess.pickTimer)
     sess.pickTimer = null
   }
@@ -232,7 +236,9 @@ export class DictationService extends EventEmitter {
       insertFailed: null,
       audioFiles: [],
       finished: false,
-      heardAudio: false
+      heardAudio: false,
+      finalArrived: false,
+      finalTimer: null
     }
     this.session = sess
     const langs = pickerLanguages(s)
@@ -361,11 +367,11 @@ export class DictationService extends EventEmitter {
     this.clearSessionTimers(sess)
     this.set({ phase: 'processing' })
     this.d.recorder.stop(sess.id)
-    sess.timers.push(
-      setTimeout(() => {
-        if (this.session === sess && !sess.finished && this.state.phase !== 'recording') this.fail('no-audio', 'No audio was received from the recorder')
-      }, this.t.audioTimeoutMs)
-    )
+    // Watchdog for the recorder only: it must deliver the last audio quickly. Recognition itself
+    // may take as long as the engine needs (slow CPUs, large models) and is NOT covered by this.
+    sess.finalTimer = setTimeout(() => {
+      if (this.session === sess && !sess.finalArrived) this.fail('recorder-failed', 'The recorder did not deliver the audio')
+    }, this.t.audioTimeoutMs)
   }
 
   async toggle(opts: { target?: DictationTarget } = {}) {
@@ -400,6 +406,10 @@ export class DictationService extends EventEmitter {
       return
     }
     const final = meta.final ?? true
+    if (final) {
+      sess.finalArrived = true
+      if (sess.finalTimer) clearTimeout(sess.finalTimer)
+    }
     const index = meta.index ?? 0
     const run = sess.queue.then(async () => {
       if (this.session !== sess) return
@@ -474,7 +484,9 @@ export class DictationService extends EventEmitter {
       if (this.state.phase !== 'recording') this.set({ phase: 'inserting', message: outcome.status === 'failed' || outcome.status === 'not-configured' ? (outcome.error ?? null) : null })
 
       const previous = joinPhrases(sess.parts.map((p) => p.final))
-      if (target === 'editor') this.d.output.insertIntoEditor(final, sess.id)
+      if (!s.voice.liveTyping) {
+        // Not live: collect the phrases, insert the whole text once the dictation ends.
+      } else if (target === 'editor') this.d.output.insertIntoEditor(final, sess.id)
       else if (target === 'external') {
         const prefix = previous && !/^[.,;:!?…)»"'’]/.test(final) ? ' ' : ''
         const r = await this.d.output.insertExternal(prefix + final, { restoreClipboard: !s.voice.keepInClipboard })
@@ -512,6 +524,13 @@ export class DictationService extends EventEmitter {
     }
     const final = joinPhrases(textParts.map((p) => p.final))
     const original = joinPhrases(sess.parts.map((p) => p.original))
+    if (!s.voice.liveTyping && final) {
+      if (sess.resolvedTarget === 'editor') this.d.output.insertIntoEditor(final, sess.id)
+      else if (sess.resolvedTarget === 'external') {
+        const r = await this.d.output.insertExternal(final, { restoreClipboard: !s.voice.keepInClipboard })
+        if (!r.ok) sess.insertFailed = r.error ?? 'insert-failed'
+      }
+    }
     let copied = false
     if (final && (s.voice.keepInClipboard || sess.insertFailed) && sess.resolvedTarget !== 'editor') {
       await this.d.output.copyText(final).then(

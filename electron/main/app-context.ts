@@ -319,7 +319,7 @@ export class AppContext {
     const id = s.recognition.speechProviderId
     if (id === 'whisper-cpp') {
       const bin = await this.localSpeech.binaryStatus()
-      if (!bin.found) return { ok: false, code: 'binary-missing', message: 'whisper.cpp is not installed' }
+      if (!bin.found && !bin.gpuPath) return { ok: false, code: 'binary-missing', message: 'whisper.cpp is not installed' }
       if (!this.localSpeech.modelPath(s.recognition.whisperModel)) return { ok: false, code: 'model-missing', message: `Model "${catalogModel(s.recognition.whisperModel)?.label ?? s.recognition.whisperModel}" is not downloaded` }
       return { ok: true }
     }
@@ -337,6 +337,10 @@ export class AppContext {
       const bin = await this.localSpeech.binaryStatus()
       const modelPath = this.localSpeech.modelPath(r.whisperModel)
       // Prefer the persistent server (the model stays loaded: fast phrase-by-phrase live typing).
+      const gpu = r.useGpu ? this.localSpeech.gpuBinary() : null
+      if (gpu && modelPath && serverBinaryFor(gpu)) {
+        return new WhisperServerProvider(this.whisperServer, { cliPath: gpu, fallbackCliPath: bin.path && serverBinaryFor(bin.path) ? bin.path : null, modelPath, modelId: r.whisperModel, threads: r.threads, useGpu: true })
+      }
       if (bin.path && modelPath && serverBinaryFor(bin.path)) {
         return new WhisperServerProvider(this.whisperServer, { cliPath: bin.path, modelPath, modelId: r.whisperModel, threads: r.threads, useGpu: r.useGpu })
       }

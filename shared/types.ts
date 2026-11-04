@@ -114,6 +114,7 @@ export type DictationErrorCode =
   | 'empty-transcript'
   | 'insert-failed'
   | 'timeout'
+  | 'recorder-failed'
   | 'busy'
   | 'unknown'
 
@@ -240,6 +241,18 @@ export interface WhisperBinaryStatus {
   source: 'custom' | 'bundled' | 'downloaded' | 'system' | null
   version: string | null
   canAutoInstall: boolean
+  /** NVIDIA GPU found on this PC (name), when a CUDA build can be used. */
+  nvidiaGpu: string | null
+  /** Installed GPU (CUDA) build of whisper.cpp, used instead of the CPU build when "Use GPU" is on. */
+  gpuPath: string | null
+}
+
+/** What the speech engine actually runs on, and how fast the last phrase was. */
+export interface EngineInfo {
+  backend: 'gpu' | 'cpu' | null
+  device: string | null
+  lastAudioMs: number | null
+  lastMs: number | null
 }
 
 /* ---------------------------------- AI actions ---------------------------------- */

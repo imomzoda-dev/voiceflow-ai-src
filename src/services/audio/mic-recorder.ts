@@ -28,7 +28,13 @@ export interface RecorderCallbacks {
 /** Live typing segmentation: a phrase ends after this much quiet following speech. */
 const PAUSE_MS = 650
 const MIN_SEGMENT_MS = 800
-const MAX_SEGMENT_MS = 25_000
+/**
+ * Phrases never exceed this length: the engine runs Whisper with a 10-second encoder window
+ * (`--audio-ctx 512`), ~4× faster on CPU than the default 30 s window with identical results.
+ */
+export const MAX_SEGMENT_MS = 9_500
+/** When a phrase hits the limit without a pause, it is cut at the quietest moment of its last part. */
+const SOFT_CUT_WINDOW_MS = 2_000
 const SPEECH_LEVEL = 0.35
 
 export class MicRecorder {
@@ -37,6 +43,7 @@ export class MicRecorder {
   private node: AudioWorkletNode | null = null
   /** Audio of the current phrase (input sample rate). */
   private chunks: Float32Array[] = []
+  private levels: number[] = []
   private chunkSamples = 0
   private startedAt = 0
   private inRate = 48000
@@ -86,6 +93,7 @@ export class MicRecorder {
     gain.gain.value = opts.gain
     this.node = new AudioWorkletNode(this.ctx, 'voiceflow-recorder', { numberOfInputs: 1, numberOfOutputs: 0 })
     this.chunks = []
+    this.levels = []
     this.chunkSamples = 0
     this.index = 0
     this.startedAt = performance.now()
@@ -97,6 +105,8 @@ export class MicRecorder {
       this.chunks.push(ev.data.samples)
       this.chunkSamples += ev.data.samples.length
       const level = levelFromRms(ev.data.rms)
+      this.levels.push(level)
+      this.levels.push(level)
       this.cb.onLevel?.(level)
       const now = performance.now()
       if (level > SPEECH_LEVEL) {
@@ -107,24 +117,41 @@ export class MicRecorder {
         this.heardSpeech = false
         this.cb.onSilence?.()
       }
-      if (opts.live) {
-        const segMs = (this.chunkSamples / this.inRate) * 1000
-        const paused = this.speechInSegment && now - this.lastLoudAt >= PAUSE_MS && segMs >= MIN_SEGMENT_MS
-        const tooLong = segMs >= MAX_SEGMENT_MS && level <= SPEECH_LEVEL
-        if (paused || tooLong) this.cb.onSegment?.(this.cutSegment())
-      }
+      // Phrases are cut at pauses (and at the length limit) in every mode; "live" only decides
+      // whether the main process inserts each phrase at once or waits for the end.
+      const segMs = (this.chunkSamples / this.inRate) * 1000
+      const paused = this.speechInSegment && now - this.lastLoudAt >= PAUSE_MS && segMs >= MIN_SEGMENT_MS
+      if (paused) this.cb.onSegment?.(this.cutSegment())
+      else if (segMs >= MAX_SEGMENT_MS) this.cb.onSegment?.(this.cutSegment(this.quietestCut()))
     }
     source.connect(gain).connect(this.node)
     if (this.ctx.state === 'suspended') await this.ctx.resume()
   }
 
+  /** Chunk index of the quietest moment in the last SOFT_CUT_WINDOW_MS (so words aren't split). */
+  private quietestCut(): number {
+    const n = this.chunks.length
+    const perChunkMs = n ? ((this.chunkSamples / this.inRate) * 1000) / n : 0
+    const span = perChunkMs ? Math.min(n - 1, Math.ceil(SOFT_CUT_WINDOW_MS / perChunkMs)) : 0
+    let best = n
+    let bestLevel = Infinity
+    for (let i = n - span; i < n; i++) {
+      if (this.levels[i] < bestLevel) {
+        bestLevel = this.levels[i]
+        best = i + 1
+      }
+    }
+    return Math.max(1, best)
+  }
+
   /** Encodes the current phrase (16 kHz mono WAV, silence trimmed) and starts a new one. */
-  private cutSegment(): RecordingResult {
-    const raw = concatFloat32(this.chunks)
+  private cutSegment(upTo = this.chunks.length): RecordingResult {
+    const raw = concatFloat32(this.chunks.slice(0, upTo))
     const durationMs = (raw.length / this.inRate) * 1000
-    this.chunks = []
-    this.chunkSamples = 0
-    this.speechInSegment = false
+    this.chunks = this.chunks.slice(upTo)
+    this.levels = this.levels.slice(upTo)
+    this.chunkSamples = this.chunks.reduce((n, c) => n + c.length, 0)
+    this.speechInSegment = this.levels.some((l) => l > SPEECH_LEVEL)
     const pcm = trimSilence(resample(raw, this.inRate, TARGET_SAMPLE_RATE))
     const s = stats(pcm)
     return { wav: encodeWav(pcm, TARGET_SAMPLE_RATE), durationMs, peak: s.peak, rms: s.rms, index: this.index++ }

@@ -104,7 +104,8 @@ export interface VoiceFlowApi {
     remove(id: string): Promise<void>
     onProgress(cb: (p: DownloadProgress) => void): Unsubscribe
     binaryStatus(): Promise<WhisperBinaryStatus>
-    installBinary(): Promise<{ ok: boolean; error?: string; path?: string }>
+    installBinary(variant?: 'cpu' | 'cuda'): Promise<{ ok: boolean; error?: string; path?: string }>
+    engineInfo(): Promise<import('./types').EngineInfo>
     chooseBinary(): Promise<WhisperBinaryStatus>
     openFolder(): Promise<void>
   }

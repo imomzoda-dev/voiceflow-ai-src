@@ -7,10 +7,15 @@ const sectionNames = Object.keys(sectionSchemas) as [SettingsSection, ...Setting
 
 export function registerSettingsIpc(ctx: AppContext) {
   handle('settings:get', z.tuple([]), () => ctx.settings.get())
-  handle('settings:update', z.tuple([z.enum(sectionNames), z.record(z.string(), z.unknown())]), (_e, section, patch) =>
+  handle('settings:update', z.tuple([z.enum(sectionNames), z.record(z.string(), z.unknown())]), async (_e, section, patch) => {
     // SettingsService validates the merged section with its zod schema.
-    ctx.settings.update(section, patch as never)
-  )
+    const r = await ctx.settings.update(section, patch as never)
+    // A model's first GPU run compiles CUDA kernels once: do it when the model is chosen, not mid-dictation.
+    if (section === 'recognition' && 'whisperModel' in patch && ctx.localSpeech.gpuBinary()) {
+      void ctx.speechProvider().then((p) => p.prewarm?.()).catch(() => undefined)
+    }
+    return r
+  })
 
   handle('providers:list', z.tuple([]), () => ctx.providers.list())
   handle(

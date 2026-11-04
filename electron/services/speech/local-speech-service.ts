@@ -146,7 +146,30 @@ export class LocalSpeechService extends EventEmitter {
 
   /* ----------------------------------- binary ----------------------------------- */
 
+  private nvidia: Promise<string | null> | null = null
+
+  /** NVIDIA GPU name via nvidia-smi (installed with the NVIDIA driver), or null. Cached. */
+  detectNvidia(): Promise<string | null> {
+    if (process.platform !== 'win32') return Promise.resolve(null)
+    this.nvidia ??= new Promise((resolve) => {
+      execFile('nvidia-smi', ['--query-gpu=name', '--format=csv,noheader'], { windowsHide: true, timeout: 5000 }, (err, stdout) => {
+        resolve(err ? null : stdout.split(/\r?\n/).find((l) => l.trim())?.trim() ?? null)
+      })
+    })
+    return this.nvidia
+  }
+
+  /** The installed CUDA build's whisper-cli, if any. */
+  gpuBinary(): string | null {
+    return findFile(join(this.dirs.bin, 'whisper-cuda'), [EXE])
+  }
+
   async binaryStatus(): Promise<WhisperBinaryStatus> {
+    const s = await this.binaryStatusBase()
+    return { ...s, nvidiaGpu: await this.detectNvidia(), gpuPath: this.gpuBinary() }
+  }
+
+  private async binaryStatusBase(): Promise<Omit<WhisperBinaryStatus, 'nvidiaGpu' | 'gpuPath'>> {
     const canAutoInstall = process.platform === 'win32' && process.arch === 'x64'
     const version = (dir: string) => {
       try {
@@ -173,11 +196,13 @@ export class LocalSpeechService extends EventEmitter {
    * Windows x64: downloads the official CPU build (whisper-bin-x64.zip) from the latest
    * ggml-org/whisper.cpp GitHub release, verifying the asset digest when GitHub provides one.
    */
-  async installBinary(): Promise<{ ok: boolean; error?: string; path?: string }> {
+  async installBinary(variant: 'cpu' | 'cuda' = 'cpu'): Promise<{ ok: boolean; error?: string; path?: string }> {
     if (process.platform !== 'win32' || process.arch !== 'x64') {
       return { ok: false, error: process.platform === 'darwin' ? 'On macOS install it with Homebrew: brew install whisper-cpp' : 'Automatic install is only available on Windows x64' }
     }
-    const id = 'whisper-binary'
+    // CPU: whisper-bin-x64.zip. NVIDIA GPU: the CUDA 12.4 build (ships cuBLAS; GTX 900-series and newer, drivers ≥ 551).
+    const assetName = variant === 'cuda' ? 'whisper-bin-win-cuda-12.4.0-x64.zip' : 'whisper-bin-x64.zip'
+    const id = variant === 'cuda' ? 'whisper-gpu' : 'whisper-binary'
     const ctrl = new AbortController()
     this.downloads.set(id, ctrl)
     try {
@@ -191,10 +216,10 @@ export class LocalSpeechService extends EventEmitter {
       if (!rel.ok) throw new Error(`GitHub API returned HTTP ${rel.status}`)
       type Release = { tag_name: string; draft: boolean; prerelease: boolean; assets: { name: string; browser_download_url: string; size: number; digest?: string | null }[] }
       const releases = (await rel.json()) as Release[]
-      const data = releases.find((r) => !r.draft && r.assets.some((a) => a.name === 'whisper-bin-x64.zip'))
-      const asset = data?.assets.find((a) => a.name === 'whisper-bin-x64.zip')
-      if (!data || !asset) throw new Error('whisper-bin-x64.zip was not found in recent whisper.cpp releases')
-      const zipPath = join(this.dirs.temp, `whisper-${data.tag_name}.zip`)
+      const data = releases.find((r) => !r.draft && r.assets.some((a) => a.name === assetName))
+      const asset = data?.assets.find((a) => a.name === assetName)
+      if (!data || !asset) throw new Error(`${assetName} was not found in recent whisper.cpp releases`)
+      const zipPath = join(this.dirs.temp, `${variant}-whisper-${data.tag_name}.zip`)
       const digest = asset.digest?.startsWith('sha256:') ? asset.digest.slice(7) : null
       await downloadFile({
         url: asset.browser_download_url,
@@ -204,7 +229,7 @@ export class LocalSpeechService extends EventEmitter {
         expectedSize: asset.size,
         onProgress: (r, t) => this.progress({ id, receivedBytes: r, totalBytes: t, state: 'downloading' })
       })
-      const target = join(this.dirs.bin, 'whisper')
+      const target = join(this.dirs.bin, variant === 'cuda' ? 'whisper-cuda' : 'whisper')
       await rm(target, { recursive: true, force: true })
       await mkdir(target, { recursive: true })
       await extract(zipPath, { dir: target })
@@ -214,7 +239,7 @@ export class LocalSpeechService extends EventEmitter {
       if (!exe) throw new Error('whisper-cli.exe was not found inside the archive')
       if (process.platform !== 'win32') chmodSync(exe, 0o755)
       this.progress({ id, receivedBytes: asset.size, totalBytes: asset.size, state: 'done', message: digest ? 'verified' : 'unverified' })
-      log.info(`Installed whisper.cpp ${data.tag_name}`, { verified: Boolean(digest) })
+      log.info(`Installed whisper.cpp ${data.tag_name} (${variant})`, { verified: Boolean(digest) })
       return { ok: true, path: exe }
     } catch (e) {
       const message = ctrl.signal.aborted ? 'Cancelled' : (e as Error).message
