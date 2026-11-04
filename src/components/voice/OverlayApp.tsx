@@ -128,7 +128,7 @@ export function OverlayApp() {
   const live = recording && !!state?.liveText
   const pickLeft = selecting && state?.pickDeadline ? Math.max(0, state.pickDeadline - now) : 0
   const pickTotal = (state?.pickSeconds ?? 2) * 1000
-  const height = selecting ? 132 : live ? 100 : 50
+  const height = selecting ? 116 : live ? 100 : 50
   const hotkey = settings ? formatBinding(settings.voice.hotkeys.dictate, navigator.userAgent.includes('Mac') ? 'darwin' : 'win32') : 'F12'
 
   const statusText =

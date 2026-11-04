@@ -237,7 +237,7 @@ export class AppContext {
     this.broadcast(EVT.dictationState, st)
     const overlay = this.ensureOverlay()
     // The island grows for the language picker and for live text; the window follows it.
-    const height = st.phase === 'selecting' ? 150 : st.phase !== 'idle' && st.liveText ? 118 : 76
+    const height = st.phase === 'selecting' ? 134 : st.phase !== 'idle' && st.liveText ? 118 : 76
     if (st.phase === 'idle') {
       if (overlay.isVisible()) overlay.hide()
     } else if (!overlay.isVisible() || overlay.getBounds().height !== height) {
