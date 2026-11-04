@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FolderOpen, Download, Upload, FileJson, Trash2, RefreshCw, AlertTriangle, ExternalLink, Volume2, PanelTop, AudioLines, AppWindow, Archive, Bell, CalendarClock, CirclePause, CircleX, Clipboard, ClipboardPaste, Cloud, Cpu, FileText, Gauge, Globe, Hand, History, Languages, LifeBuoy, MessageSquareText, Mic, Moon, Palette, PanelBottomClose, Plug, Power, Repeat, Rows3, ShieldCheck, Sparkles, Timer } from 'lucide-react'
+import { FolderOpen, Download, Upload, FileJson, Trash2, RefreshCw, AlertTriangle, ExternalLink, Volume2, PanelTop, AudioLines, AppWindow, Archive, Bell, CalendarClock, CirclePause, CircleX, Clipboard, ClipboardPaste, Cloud, Cpu, FileText, Gauge, Globe, Hand, History, Languages, LifeBuoy, MessageSquareText, Mic, Moon, Palette, PanelBottomClose, Plug, Power, Repeat, Rows3, ShieldCheck, Sparkles, Timer, Type } from 'lucide-react'
 import type { BackupInfo, HotkeyStatus, ProviderRecord, SystemInfo } from '@shared/types'
 import { APP_CONFIG } from '@shared/app-config'
 import { useUpdates, WhatsNewDialog } from '@/components/common/UpdateCard'
@@ -119,6 +119,22 @@ export function VoiceSection() {
           </div>
         </Field>
       </Group>
+      <Group title={t('settings.voice.dictationFlow')} footer={t('settings.voice.languagePickerFooter')}>
+        <Field inline icon={<IconTile icon={Languages} color="blue" />} label={t('settings.voice.languagePicker')} hint={t('settings.voice.languagePickerHint')}>
+          <Switch checked={v.languagePicker} onCheckedChange={(x) => void update('voice', { languagePicker: x })} />
+        </Field>
+        {v.languagePicker && (
+          <Field inline icon={<IconTile icon={Timer} color="indigo" />} label={t('settings.voice.pickerSeconds')}>
+            <Segmented size="sm" value={String(v.pickerSeconds)} onChange={(x) => void update('voice', { pickerSeconds: Number(x) })} options={[2, 4, 6, 8].map((n) => ({ value: String(n), label: t('common.seconds', { count: n }) }))} />
+          </Field>
+        )}
+        <Field inline icon={<IconTile icon={Type} color="green" />} label={t('settings.voice.liveTyping')} hint={t('settings.voice.liveTypingHint')}>
+          <Switch checked={v.liveTyping} onCheckedChange={(x) => void update('voice', { liveTyping: x })} />
+        </Field>
+        <Field inline icon={<IconTile icon={Clipboard} color="gray" />} label={t('settings.voice.keepInClipboard')} hint={t('settings.voice.keepInClipboardHint')}>
+          <Switch checked={v.keepInClipboard} onCheckedChange={(x) => void update('voice', { keepInClipboard: x })} />
+        </Field>
+      </Group>
       <Group title={t('settings.voice.hotkeys')}>
         <Field inline icon={<IconTile icon={Hand} color="orange" />} label={t('settings.voice.activation')}>
           <Segmented value={v.activationMode} onChange={(m) => void update('voice', { activationMode: m })} options={(['hold', 'toggle', 'manual'] as const).map((m) => ({ value: m, label: t(`activation.${m}`) }))} />
@@ -166,15 +182,48 @@ export function VoiceSection() {
         <Field inline label={t('settings.voice.widgetPosition')} icon={<IconTile icon={PanelTop} color="graphite" />}>
           <Segmented size="sm" value={v.widgetPosition} onChange={(x) => void update('voice', { widgetPosition: x })} options={[{ value: 'top', label: t('settings.voice.widgetTop') }, { value: 'bottom', label: t('settings.voice.widgetBottom') }]} />
         </Field>
-        <Field inline icon={<IconTile icon={Clipboard} color="gray" />} label={t('settings.voice.restoreClipboard')}>
-          <Switch checked={v.restoreClipboard} onCheckedChange={(x) => void update('voice', { restoreClipboard: x })} />
-        </Field>
+
       </Group>
     </>
   )
 }
 
 /* ----------------------------------- Recognition ----------------------------------- */
+
+/** Default dictation language + two more: the language picker and recognition use exactly these. */
+function YourLanguages() {
+  const { t } = useTranslation()
+  const { s, update } = useS()
+  const r = s.recognition
+  const langs = [r.language, ...r.allowedLanguages.filter((l) => l !== r.language)].slice(0, 3)
+  while (langs.length < 3) langs.push(['ru', 'en', 'tg', 'uz'].find((l) => !langs.includes(l))!)
+  const set = (i: number, code: string) => {
+    const next = [...langs]
+    const other = next.indexOf(code)
+    if (other >= 0 && other !== i) next[other] = next[i] // swap instead of duplicating
+    next[i] = code
+    void update('recognition', { language: next[0], allowedLanguages: next, ...(r.languageMode === 'auto' ? { languageMode: 'multiple' as const } : {}) })
+  }
+  const options = LANGUAGES.map((l) => ({ value: l.code, label: `${l.native}${l.native !== l.english ? ` — ${l.english}` : ''}` }))
+  const labels = [t('settings.recognition.primaryLanguage'), t('settings.recognition.secondLanguage'), t('settings.recognition.thirdLanguage')]
+  return (
+    <div className="py-3">
+      <div className="mb-1 text-[14px] text-fg">{t('settings.recognition.yourLanguages')}</div>
+      <div className="mb-3 text-[12px] leading-snug text-muted">{t('settings.recognition.yourLanguagesHint')}</div>
+      <div className="grid grid-cols-3 gap-2">
+        {langs.map((code, i) => (
+          <label key={i} className="min-w-0">
+            <div className="mb-1 flex items-center gap-1.5 text-[11.5px] font-medium text-muted">
+              <span className={i === 0 ? 'grid h-4 w-4 place-items-center rounded-full bg-accent text-[9.5px] font-bold text-accent-fg' : 'grid h-4 w-4 place-items-center rounded-full bg-fill-strong text-[9.5px] font-bold text-fg'}>{i + 1}</span>
+              {labels[i]}
+            </div>
+            <Select className="w-full min-w-0" value={code} onChange={(v) => set(i, v)} options={options} label={labels[i]} />
+          </label>
+        ))}
+      </div>
+    </div>
+  )
+}
 
 export function RecognitionSection() {
   const { t } = useTranslation()
@@ -204,6 +253,7 @@ export function RecognitionSection() {
             </Button>
           </div>
         )}
+        <YourLanguages />
         <Field inline icon={<IconTile icon={Languages} color="blue" />} label={t('settings.recognition.languageMode')}>
           <Select className="w-[260px]" value={r.languageMode} onChange={(v) => void update('recognition', { languageMode: v as typeof r.languageMode })} options={(['auto', 'single', 'multiple'] as const).map((m) => ({ value: m, label: t(`settings.recognition.${m}`) }))} />
         </Field>

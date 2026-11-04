@@ -11,15 +11,18 @@ import { encodeWav } from '../../../shared/audio'
 const wav = () => Buffer.from(encodeWav(new Float32Array(16000).map((_, i) => Math.sin(i / 10) * 0.4)))
 const tick = () => new Promise((r) => setTimeout(r, 5))
 
-function setup(over: { settings?: Partial<AppSettings>; transcript?: Partial<TranscriptionResult> | Error; processor?: DictationDeps['processor']; editorFocused?: boolean; preflight?: Awaited<ReturnType<DictationDeps['preflight']>> } = {}) {
+function setup(over: { settings?: Partial<AppSettings>; transcript?: Partial<TranscriptionResult> | Error; processor?: DictationDeps['processor']; editorFocused?: boolean; preflight?: Awaited<ReturnType<DictationDeps['preflight']>>; held?: () => boolean } = {}) {
   const settings: AppSettings = structuredClone({ ...DEFAULT_SETTINGS, ...over.settings })
   settings.voice.minHoldMs = 0
+  settings.voice.languagePicker = false
+  settings.recognition.languageMode = 'auto'
   const recorder = { start: vi.fn(), stop: vi.fn(), cancel: vi.fn() }
   const output = {
     editorFocused: vi.fn(() => over.editorFocused ?? false),
     insertIntoEditor: vi.fn(),
     commandEditor: vi.fn(),
-    insertExternal: vi.fn(async () => ({ ok: true }))
+    insertExternal: vi.fn(async (_t: string, _o: { restoreClipboard: boolean }) => ({ ok: true }) as { ok: boolean; error?: string }),
+    copyText: vi.fn(async (_t: string) => {})
   }
   const transcribe = vi.fn(async (): Promise<TranscriptionResult> => {
     if (over.transcript instanceof Error) throw over.transcript
@@ -46,6 +49,7 @@ function setup(over: { settings?: Partial<AppSettings>; transcript?: Partial<Tra
     history: history as unknown as DictationDeps['history'],
     dirs: { temp: dir, audio: dir },
     preflight: async () => over.preflight ?? { ok: true },
+    isDictateHeld: over.held ?? (() => true),
     timings: { successHoldMs: 20, errorHoldMs: 20, recorderReadyTimeoutMs: 2000, audioTimeoutMs: 2000 }
   })
   const phases: string[] = []
@@ -68,7 +72,7 @@ describe('DictationService', () => {
   it('runs RECORDING → PROCESSING → CORRECTING → INSERTING → SUCCESS → IDLE and pastes into the active app', async () => {
     const { svc, recorder, output, phases, history } = setup()
     await speak(svc, recorder)
-    expect(output.insertExternal).toHaveBeenCalledWith('Привет мир.')
+    expect(output.insertExternal).toHaveBeenCalledWith('Привет мир.', { restoreClipboard: false })
     // 'processing' is emitted twice: once on stop, once when the detected language is known.
     expect([...new Set(phases)]).toEqual(['recording', 'processing', 'correcting', 'inserting', 'success'])
     expect(history.insert).toHaveBeenCalledWith(expect.objectContaining({ status: 'success', originalText: 'привет мир', finalText: 'Привет мир.', language: 'ru' }))
@@ -148,7 +152,7 @@ describe('DictationService', () => {
     const processor = { process: vi.fn(async (t: string) => ({ final: t, corrected: null, status: 'failed' as const, error: 'down', errorCode: 'network' as const })) }
     const { svc, recorder, output } = setup({ processor })
     await speak(svc, recorder)
-    expect(output.insertExternal).toHaveBeenCalledWith('привет мир')
+    expect(output.insertExternal).toHaveBeenCalledWith('привет мир', { restoreClipboard: false })
     expect(svc.getState().phase).toBe('success')
   })
 
@@ -178,5 +182,103 @@ describe('DictationService', () => {
     await tick
     expect(recorder.stop).toHaveBeenCalled()
     vi.useRealTimers()
+  })
+
+  it('language picker: shows your three languages, arrows move, the countdown starts recording in the chosen one', async () => {
+    vi.useFakeTimers()
+    const { svc, recorder, transcribe, settings } = setup()
+    settings.voice.languagePicker = true
+    settings.voice.pickerSeconds = 2
+    settings.recognition.language = 'tg'
+    settings.recognition.allowedLanguages = ['tg', 'ru', 'en']
+    await svc.start({ activation: 'hold' })
+    expect(svc.getState()).toMatchObject({ phase: 'selecting', pickLanguages: ['tg', 'ru', 'en'], pickIndex: 0 })
+    expect(recorder.start).not.toHaveBeenCalled()
+    svc.movePick(1)
+    expect(svc.getState().pickIndex).toBe(1)
+    svc.movePick(-2) // wraps around
+    expect(svc.getState().language).toBe('en')
+    svc.movePick(-1)
+    vi.advanceTimersByTime(1900)
+    expect(svc.getState().phase).toBe('selecting')
+    vi.advanceTimersByTime(200)
+    expect(svc.getState()).toMatchObject({ phase: 'recording', language: 'ru' })
+    expect(recorder.start).toHaveBeenCalledTimes(1)
+    const id = recorder.start.mock.calls[0][0].sessionId
+    svc.recorderReady(id)
+    vi.advanceTimersByTime(1000)
+    await svc.stop()
+    vi.useRealTimers()
+    await svc.receiveAudio(id, wav(), { durationMs: 1000, peak: 0.4, rms: 0.2 })
+    expect((transcribe.mock.calls as unknown as [{ language: string }][])[0][0].language).toBe('ru')
+  })
+
+  it('language picker: pressing the key again starts at once; cancel closes it', async () => {
+    const { svc, recorder, settings } = setup()
+    settings.voice.languagePicker = true
+    await svc.onKeyPress()
+    expect(svc.getState().phase).toBe('selecting')
+    await svc.onKeyPress()
+    expect(svc.getState().phase).toBe('recording')
+    svc.cancel()
+    await svc.onKeyPress()
+    expect(svc.getState().phase).toBe('selecting')
+    svc.cancel()
+    expect(svc.getState().phase).toBe('idle')
+    expect(recorder.start).toHaveBeenCalledTimes(1)
+  })
+
+  it('hold vs press: a held key stops on release, a tapped key stops on the next press', async () => {
+    let held = true
+    const { svc, recorder } = setup({ held: () => held })
+    await svc.onKeyPress()
+    svc.onKeyRelease()
+    expect(recorder.stop).toHaveBeenCalledTimes(1)
+    svc.cancel()
+    held = false
+    await svc.onKeyPress()
+    svc.onKeyRelease()
+    expect(svc.getState().phase).toBe('recording')
+    await svc.onKeyPress()
+    expect(recorder.stop).toHaveBeenCalledTimes(2)
+  })
+
+  it('live typing: phrases are inserted while speaking, in order, and the whole text is left on the clipboard', async () => {
+    const { svc, recorder, output, history } = setup({ transcript: { text: 'салом' } })
+    await svc.start({ activation: 'toggle' })
+    const id = recorder.start.mock.calls[0][0].sessionId
+    svc.recorderReady(id)
+    expect(recorder.start.mock.calls[0][0].live).toBe(true)
+    await svc.receiveAudio(id, wav(), { durationMs: 900, peak: 0.4, rms: 0.2, index: 0, final: false })
+    expect(svc.getState().phase).toBe('recording') // still listening
+    expect(output.insertExternal).toHaveBeenNthCalledWith(1, 'Салом.', { restoreClipboard: false })
+    expect(svc.getState().liveText).toBe('Салом.')
+    await svc.stop()
+    await svc.receiveAudio(id, wav(), { durationMs: 900, peak: 0.4, rms: 0.2, index: 1, final: true })
+    expect(output.insertExternal).toHaveBeenNthCalledWith(2, ' Салом.', { restoreClipboard: false })
+    expect(output.copyText).toHaveBeenCalledWith('Салом. Салом.')
+    expect(svc.getState()).toMatchObject({ phase: 'success', copied: true })
+    expect(history.insert).toHaveBeenCalledWith(expect.objectContaining({ finalText: 'Салом. Салом.', status: 'success' }))
+  })
+
+  it('a silent tail after the last phrase still finishes the dictation', async () => {
+    const { svc, recorder, transcribe } = setup()
+    await svc.start({ activation: 'toggle' })
+    const id = recorder.start.mock.calls[0][0].sessionId
+    svc.recorderReady(id)
+    await svc.receiveAudio(id, wav(), { durationMs: 900, peak: 0.4, rms: 0.2, index: 0, final: false })
+    await svc.stop()
+    await svc.receiveAudio(id, wav(), { durationMs: 400, peak: 0.002, rms: 0.001, index: 1, final: true })
+    expect(transcribe).toHaveBeenCalledTimes(1)
+    expect(svc.getState().phase).toBe('success')
+  })
+
+  it('keeps the text on the clipboard even if pasting failed', async () => {
+    const { svc, recorder, output, settings } = setup()
+    settings.voice.keepInClipboard = false
+    output.insertExternal.mockResolvedValueOnce({ ok: false, error: 'accessibility' })
+    await speak(svc, recorder)
+    expect(output.copyText).toHaveBeenCalledWith('Привет мир.')
+    expect(svc.getState()).toMatchObject({ phase: 'success', message: 'insert-failed' })
   })
 })

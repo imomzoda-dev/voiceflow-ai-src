@@ -93,6 +93,7 @@ const api: VoiceFlowApi = {
     cancel: inv('dictation:cancel') as VoiceFlowApi['dictation']['cancel'],
     toggle: inv('dictation:toggle') as VoiceFlowApi['dictation']['toggle'],
     state: inv('dictation:state') as VoiceFlowApi['dictation']['state'],
+    pick: inv('dictation:pick') as VoiceFlowApi['dictation']['pick'],
     pasteLast: inv('dictation:pasteLast') as VoiceFlowApi['dictation']['pasteLast'],
     reprocess: inv('dictation:reprocess') as VoiceFlowApi['dictation']['reprocess'],
     onState: (cb) => on(EVT.dictationState, cb),

@@ -114,6 +114,8 @@ export interface VoiceFlowApi {
     cancel(): Promise<void>
     toggle(opts?: { target?: DictationTarget }): Promise<void>
     state(): Promise<DictationState>
+    /** Choose a language in the picker (mouse click on the widget). */
+    pick(index: number): Promise<void>
     pasteLast(): Promise<boolean>
     reprocess(id: string, mode: ProcessingMode): Promise<{ ok: boolean; text?: string; error?: string }>
     onState(cb: (s: DictationState) => void): Unsubscribe
@@ -166,7 +168,8 @@ export interface VoiceFlowApi {
   /** Used only by the overlay recorder window. */
   recorder: {
     onCommand(cb: (cmd: RecorderCommand) => void): Unsubscribe
-    submit(sessionId: string, wav: ArrayBuffer, meta: { durationMs: number; peak: number; rms: number }): Promise<void>
+    /** One audio segment: in live mode each phrase (after a pause) is sent as it ends; `final` marks the last one. */
+    submit(sessionId: string, wav: ArrayBuffer, meta: { durationMs: number; peak: number; rms: number; index: number; final: boolean }): Promise<void>
     reportError(sessionId: string, code: 'mic-unavailable' | 'mic-permission' | 'no-audio', message: string): void
     reportLevel(level: number): void
     reportReady(sessionId: string): void
@@ -175,7 +178,7 @@ export interface VoiceFlowApi {
 }
 
 export type RecorderCommand =
-  | { type: 'start'; sessionId: string; deviceId: string | null; gain: number; maxDurationSec: number; autoStopOnSilence: boolean; silenceTimeoutSec: number }
+  | { type: 'start'; sessionId: string; deviceId: string | null; gain: number; maxDurationSec: number; autoStopOnSilence: boolean; silenceTimeoutSec: number; live: boolean }
   | { type: 'stop'; sessionId: string }
   | { type: 'cancel'; sessionId: string }
   | { type: 'prewarm' }

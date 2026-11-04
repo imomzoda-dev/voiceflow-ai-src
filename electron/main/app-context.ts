@@ -15,13 +15,14 @@ import { ProviderService } from '../services/ai/provider-service'
 import { TextProcessor } from '../services/ai/text-processor'
 import { LocalSpeechService } from '../services/speech/local-speech-service'
 import { WhisperCppProvider } from '../services/speech/whisper-cpp'
-import { SpeechError, type SpeechProvider } from '../services/speech/types'
+import { SpeechError } from '../services/speech/types'
+import { WhisperServerManager, WhisperServerProvider, serverBinaryFor } from '../services/speech/whisper-server'
 import { catalogModel } from '../services/speech/model-catalog'
 import { UiohookBridge } from '../native/uiohook-bridge'
 import type { NativeInputBridge } from '../native/input-bridge'
 import { HotkeyManager } from './hotkey-manager'
 import { ClipboardService, TypingService } from '../services/typing-service'
-import { DictationService } from '../services/dictation-service'
+import { DictationService, type PrewarmableSpeech } from '../services/dictation-service'
 import { FileService } from '../services/file-service'
 import { BackupService } from '../services/backup-service'
 import { TrayManager } from './tray-manager'
@@ -62,6 +63,8 @@ export class AppContext {
   readonly backup: BackupService
   readonly tray: TrayManager
   readonly updater: UpdaterService
+  readonly clipboard: ClipboardService
+  readonly whisperServer = new WhisperServerManager()
 
   mainWindow: BrowserWindow | null = null
   overlayWindow: BrowserWindow | null = null
@@ -90,7 +93,8 @@ export class AppContext {
     this.updater = new UpdaterService(app.getVersion(), app.isPackaged, join(paths.temp, 'updates'))
     this.bridge = new UiohookBridge()
     this.hotkeys = new HotkeyManager(this.bridge)
-    this.typing = new TypingService(this.bridge, new ClipboardService(), () => this.hotkeys.matcher.modifiersDown(), process.platform, () =>
+    this.clipboard = new ClipboardService()
+    this.typing = new TypingService(this.bridge, this.clipboard, () => this.hotkeys.matcher.modifiersDown(), process.platform, () =>
       process.platform === 'darwin' ? systemPreferences.isTrustedAccessibilityClient(false) : true
     )
     this.files = new FileService(() => this.mainWindow)
@@ -113,8 +117,9 @@ export class AppContext {
         editorFocused: () => this.editorFocused && !!this.mainWindow && this.mainWindow.isFocused(),
         insertIntoEditor: (text, resultId) => this.mainWindow?.webContents.send(EVT.editorInsert, { text, resultId }),
         commandEditor: (command, resultId) => this.mainWindow?.webContents.send(EVT.editorCommand, { command, resultId }),
-        insertExternal: async (text) => {
-          const r = await this.typing.insert(text, { restoreClipboard: this.settings.get().voice.restoreClipboard })
+        copyText: (text) => this.clipboard.writeText(text),
+        insertExternal: async (text, opts) => {
+          const r = await this.typing.insert(text, opts)
           if (!r.ok) this.notify(this.str(r.error === 'accessibility' ? 'accessibilityNeeded' : 'insertFailed'))
           return r
         }
@@ -124,7 +129,8 @@ export class AppContext {
       dictionary: () => this.dictionary.list(),
       history: this.dictations,
       dirs: { temp: paths.temp, audio: paths.audio },
-      preflight: () => this.preflight()
+      preflight: () => this.preflight(),
+      isDictateHeld: () => this.hotkeys.matcher.isHeld('dictate')
     })
   }
 
@@ -156,6 +162,9 @@ export class AppContext {
     this.dictation.on('result', (r) => this.broadcast(EVT.dictationResult, r))
     this.hotkeys.on('press', (a) => this.onHotkeyPress(a))
     this.hotkeys.on('release', (a) => this.onHotkeyRelease(a))
+    this.hotkeys.on('pick', (delta: number) => this.dictation.movePick(delta))
+    this.hotkeys.on('pickConfirm', () => this.dictation.confirmPick())
+    this.hotkeys.on('pickIndex', (i: number) => this.dictation.choosePick(i))
     this.hotkeys.on('chord', () => {
       if (this.dictation.isRecording()) this.dictation.cancel()
     })
@@ -227,13 +236,16 @@ export class AppContext {
   private onDictationState(st: DictationState) {
     this.broadcast(EVT.dictationState, st)
     const overlay = this.ensureOverlay()
+    // The island grows for the language picker and for live text; the window follows it.
+    const height = st.phase === 'selecting' ? 150 : st.phase !== 'idle' && st.liveText ? 118 : 76
     if (st.phase === 'idle') {
       if (overlay.isVisible()) overlay.hide()
-    } else if (!overlay.isVisible()) {
-      positionOverlay(overlay, this.settings.get().voice.widgetPosition)
-      overlay.showInactive()
+    } else if (!overlay.isVisible() || overlay.getBounds().height !== height) {
+      positionOverlay(overlay, this.settings.get().voice.widgetPosition, height)
+      if (!overlay.isVisible()) overlay.showInactive()
     }
-    this.hotkeys.armCancel(st.phase === 'recording' || st.phase === 'processing' || st.phase === 'correcting')
+    this.hotkeys.armCancel(['selecting', 'recording', 'processing', 'correcting'].includes(st.phase))
+    this.hotkeys.setPicker(st.phase === 'selecting')
     this.refreshTray()
   }
 
@@ -275,8 +287,7 @@ export class AppContext {
     const s = this.settings.get()
     switch (action) {
       case 'dictate':
-        if (s.voice.activationMode === 'hold') void this.dictation.start({ activation: 'hold' })
-        else if (s.voice.activationMode === 'toggle') void this.dictation.toggle()
+        void this.dictation.onKeyPress()
         break
       case 'cancel':
         if (this.dictation.isBusy()) this.dictation.cancel()
@@ -298,7 +309,7 @@ export class AppContext {
   }
 
   private onHotkeyRelease(action: string) {
-    if (action === 'dictate' && this.settings.get().voice.activationMode === 'hold') void this.dictation.stop()
+    if (action === 'dictate') this.dictation.onKeyRelease()
   }
 
   /* ------------------------------- speech engine ------------------------------- */
@@ -319,11 +330,16 @@ export class AppContext {
     return { ok: true }
   }
 
-  async speechProvider(): Promise<SpeechProvider> {
+  async speechProvider(): Promise<PrewarmableSpeech> {
     const s = this.settings.get()
     const r = s.recognition
     if (r.speechProviderId === 'whisper-cpp') {
       const bin = await this.localSpeech.binaryStatus()
+      const modelPath = this.localSpeech.modelPath(r.whisperModel)
+      // Prefer the persistent server (the model stays loaded: fast phrase-by-phrase live typing).
+      if (bin.path && modelPath && serverBinaryFor(bin.path)) {
+        return new WhisperServerProvider(this.whisperServer, { cliPath: bin.path, modelPath, modelId: r.whisperModel, threads: r.threads, useGpu: r.useGpu })
+      }
       return new WhisperCppProvider({
         binaryPath: bin.path,
         modelPath: this.localSpeech.modelPath(r.whisperModel),
@@ -373,6 +389,7 @@ export class AppContext {
     this.dictation.cancel()
     this.hotkeys.stop()
     this.updater.stop()
+    this.whisperServer.stop()
     this.tray.destroy()
     try {
       this.h.close()

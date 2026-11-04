@@ -53,6 +53,13 @@ export const voiceSchema = z.object({
   /** Hold mode: releases shorter than this are treated as accidental taps and cancelled. */
   minHoldMs: z.number().int().min(0).max(2000),
   playSounds: z.boolean(),
+  /** F12 first shows your three languages; ← → choose, F12/Enter confirms, otherwise it starts after the countdown. */
+  languagePicker: z.boolean(),
+  pickerSeconds: z.number().int().min(1).max(10),
+  /** Insert text phrase by phrase while you speak (after each short pause), like Google Docs voice typing. */
+  liveTyping: z.boolean(),
+  /** Leave the dictated text on the clipboard, so it is never lost when no text field had focus. */
+  keepInClipboard: z.boolean(),
   /** Where the floating dictation widget appears. */
   widgetPosition: z.enum(['top', 'bottom']),
   restoreClipboard: z.boolean()
@@ -65,6 +72,7 @@ export const recognitionSchema = z.object({
   whisperBinaryPath: z.string().max(2048).nullable(),
   languageMode: z.enum(['auto', 'single', 'multiple']),
   language: langCode,
+  /** Your three dictation languages; `language` is the default (first) one. */
   allowedLanguages: z.array(langCode).max(20),
   quality: z.enum(['fast', 'balanced', 'accurate']),
   threads: z.number().int().min(0).max(64),
@@ -158,6 +166,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
     voiceCommands: true,
     minHoldMs: 250,
     playSounds: true,
+    languagePicker: true,
+    pickerSeconds: 2,
+    liveTyping: true,
+    keepInClipboard: true,
     widgetPosition: 'top',
     restoreClipboard: true
   },
@@ -165,7 +177,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     speechProviderId: 'whisper-cpp',
     whisperModel: 'large-v3-turbo-q5_0',
     whisperBinaryPath: null,
-    languageMode: 'auto',
+    languageMode: 'multiple',
     language: 'tg',
     allowedLanguages: ['tg', 'ru', 'en'],
     quality: 'balanced',

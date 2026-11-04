@@ -21,13 +21,39 @@ export class HotkeyManager extends EventEmitter {
   private bindings: Record<HotkeyAction, HotkeyBinding | null> = { dictate: null, cancel: null, openWindow: null, pasteLast: null, cycleMode: null }
   private suppress = true
   private cancelArmed = false
+  private pickerActive = false
+  private static readonly PICKER_KEYS = ['Left', 'Right', 'Enter', '1', '2', '3']
+
+  /** While the picker is open, its keys are kept from reaching the focused app. */
+  setPicker(active: boolean) {
+    if (this.pickerActive === active) return
+    this.pickerActive = active
+    for (const acc of HotkeyManager.PICKER_KEYS) {
+      try {
+        if (active) {
+          if (!globalShortcut.isRegistered(acc)) globalShortcut.register(acc, noop)
+        } else globalShortcut.unregister(acc)
+      } catch {
+        /* ignore */
+      }
+    }
+  }
 
   constructor(
     private readonly bridge: NativeInputBridge,
     private readonly platform: NodeJS.Platform = process.platform
   ) {
     super()
-    bridge.on('key', (e) => this.matcher.handle(e))
+    bridge.on('key', (e) => {
+      // Language picker: <- -> move, Enter confirms, 1-3 choose directly (only while the picker is open).
+      if (this.pickerActive && e.type === 'down' && !e.ctrl && !e.alt && !e.meta) {
+        if (e.keycode === 57419) return void this.emit('pick', -1)
+        if (e.keycode === 57421) return void this.emit('pick', 1)
+        if (e.keycode === 28 || e.keycode === 3612) return void this.emit('pickConfirm')
+        if (e.keycode >= 2 && e.keycode <= 4) return void this.emit('pickIndex', e.keycode - 2)
+      }
+      this.matcher.handle(e)
+    })
     this.matcher.on('press', (a: HotkeyAction) => {
       if (a === 'cancel' && !this.cancelArmed) return
       this.emit('press', a)

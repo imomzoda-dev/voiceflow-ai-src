@@ -71,7 +71,7 @@ export interface Template {
 
 /* ---------------------------------- Dictation ---------------------------------- */
 
-export type DictationPhase = 'idle' | 'recording' | 'processing' | 'correcting' | 'inserting' | 'success' | 'error'
+export type DictationPhase = 'idle' | 'selecting' | 'recording' | 'processing' | 'correcting' | 'inserting' | 'success' | 'error'
 
 export type DictationTarget = 'auto' | 'editor' | 'external' | 'preview'
 
@@ -87,6 +87,15 @@ export interface DictationState {
   errorCode: DictationErrorCode | null
   activation: 'hold' | 'toggle' | 'manual'
   maxDurationSec: number
+  /** Language picker (phase "selecting"): the user's languages, the highlighted one and when it auto-confirms. */
+  pickLanguages: string[]
+  pickIndex: number
+  pickDeadline: number | null
+  pickSeconds: number
+  /** Live typing: the end of the text inserted so far in this dictation. */
+  liveText: string
+  /** The final text was left on the clipboard. */
+  copied: boolean
 }
 
 export type DictationErrorCode =

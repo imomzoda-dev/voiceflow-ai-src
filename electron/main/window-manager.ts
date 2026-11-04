@@ -128,10 +128,10 @@ export function createOverlayWindow(): BrowserWindow {
  * Places the widget top-centre (just under the menu bar / notch, like the Dynamic Island) or
  * bottom-centre of the display under the cursor. DIP coordinates keep it DPI-aware.
  */
-export function positionOverlay(win: BrowserWindow, position: 'top' | 'bottom' = 'top') {
+export function positionOverlay(win: BrowserWindow, position: 'top' | 'bottom' = 'top', h: number = OVERLAY_SIZE.height) {
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint())
   const { x, y, width, height } = display.workArea
   const bx = Math.round(x + (width - OVERLAY_SIZE.width) / 2)
-  const by = position === 'top' ? Math.round(y + 2) : Math.round(y + height - OVERLAY_SIZE.height - 28)
-  win.setBounds({ x: bx, y: by, ...OVERLAY_SIZE })
+  const by = position === 'top' ? Math.round(y + 2) : Math.round(y + height - h - 28)
+  win.setBounds({ x: bx, y: by, width: OVERLAY_SIZE.width, height: h })
 }

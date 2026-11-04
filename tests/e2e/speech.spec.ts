@@ -43,12 +43,18 @@ for (const c of cases) {
       }
       const model = (await p.evaluate(() => window.voiceflow.models.catalog())).find((m) => m.id === MODEL)!
       console.log(`whisper-cli: ${bin.path} (${bin.version ?? 'unknown version'}) · model ${MODEL} verified=${model.verified}`)
-      await p.evaluate((m) => window.voiceflow.settings.update('recognition', { speechProviderId: 'whisper-cpp', whisperModel: m, languageMode: 'auto' }), MODEL)
+      // Your languages: Tajik (default), Russian, English. The picker chooses this clip's language.
+      await p.evaluate((m) => window.voiceflow.settings.update('recognition', { speechProviderId: 'whisper-cpp', whisperModel: m, languageMode: 'multiple', language: 'tg', allowedLanguages: ['tg', 'ru', 'en'] }), MODEL)
       await p.evaluate(() => window.voiceflow.settings.update('writing', { mode: 'raw' }))
+      await p.evaluate(() => window.voiceflow.settings.update('voice', { languagePicker: true, pickerSeconds: 2, liveTyping: true }))
 
       const started = Date.now()
       const s = await p.evaluate(() => window.voiceflow.dictation.start({ target: 'preview' }))
       expect(s.ok, s.error).toBe(true)
+      const pick = await p.evaluate(() => window.voiceflow.dictation.state())
+      expect(pick.phase).toBe('selecting')
+      expect(pick.pickLanguages).toEqual(['tg', 'ru', 'en'])
+      await p.evaluate((i) => window.voiceflow.dictation.pick(i), c.lang === 'ru' ? 1 : 2)
       await expect.poll(async () => (await p.evaluate(() => window.voiceflow.dictation.state())).phase).toBe('recording')
       // Record exactly the clip length: Chromium's fake microphone loops the file.
       const clipMs = ((statSync(join(dir!, c.file)).size - 44) / (48000 * 2)) * 1000

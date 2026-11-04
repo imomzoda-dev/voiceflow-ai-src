@@ -41,6 +41,8 @@ nsis:
   multiLanguageInstaller: true
   installerLanguages: [en_US, ru_RU]
   license: LICENSE.txt
+  # Detects an installed version: "Update 1.0 → 1.1" page with an Update button, keeps folder and data.
+  include: resources/build/installer.nsh
 
 # macOS (Apple Silicon and Intel) is built on GitHub's macOS runner (.github/workflows/release.yml).
 mac:

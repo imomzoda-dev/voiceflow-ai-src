@@ -12,6 +12,8 @@ export interface RecordingResult {
   durationMs: number
   peak: number
   rms: number
+  /** Position of this phrase in the dictation (0, 1, 2…). */
+  index: number
 }
 
 export interface RecorderCallbacks {
@@ -19,17 +21,29 @@ export interface RecorderCallbacks {
   onError?: (code: RecorderErrorCode, message: string) => void
   /** Fired when auto-stop-on-silence decides speech has ended. */
   onSilence?: () => void
+  /** Live typing: a finished phrase (cut at a pause) while recording continues. */
+  onSegment?: (segment: RecordingResult) => void
 }
+
+/** Live typing segmentation: a phrase ends after this much quiet following speech. */
+const PAUSE_MS = 650
+const MIN_SEGMENT_MS = 800
+const MAX_SEGMENT_MS = 25_000
+const SPEECH_LEVEL = 0.35
 
 export class MicRecorder {
   private ctx: AudioContext | null = null
   private stream: MediaStream | null = null
   private node: AudioWorkletNode | null = null
+  /** Audio of the current phrase (input sample rate). */
   private chunks: Float32Array[] = []
+  private chunkSamples = 0
   private startedAt = 0
   private inRate = 48000
   private lastLoudAt = 0
   private heardSpeech = false
+  private speechInSegment = false
+  private index = 0
 
   constructor(private readonly cb: RecorderCallbacks = {}) {}
 
@@ -37,7 +51,7 @@ export class MicRecorder {
     return this.stream !== null
   }
 
-  async start(opts: { deviceId: string | null; gain: number; autoStopOnSilence?: boolean; silenceTimeoutSec?: number }): Promise<void> {
+  async start(opts: { deviceId: string | null; gain: number; autoStopOnSilence?: boolean; silenceTimeoutSec?: number; live?: boolean }): Promise<void> {
     await this.dispose()
     try {
       this.stream = await navigator.mediaDevices.getUserMedia({
@@ -72,36 +86,57 @@ export class MicRecorder {
     gain.gain.value = opts.gain
     this.node = new AudioWorkletNode(this.ctx, 'voiceflow-recorder', { numberOfInputs: 1, numberOfOutputs: 0 })
     this.chunks = []
+    this.chunkSamples = 0
+    this.index = 0
     this.startedAt = performance.now()
     this.lastLoudAt = this.startedAt
     this.heardSpeech = false
+    this.speechInSegment = false
     const silenceMs = (opts.silenceTimeoutSec ?? 4) * 1000
     this.node.port.onmessage = (ev: MessageEvent<{ samples: Float32Array; rms: number }>) => {
       this.chunks.push(ev.data.samples)
+      this.chunkSamples += ev.data.samples.length
       const level = levelFromRms(ev.data.rms)
       this.cb.onLevel?.(level)
       const now = performance.now()
-      if (level > 0.35) {
+      if (level > SPEECH_LEVEL) {
         this.lastLoudAt = now
         this.heardSpeech = true
+        this.speechInSegment = true
       } else if (opts.autoStopOnSilence && this.heardSpeech && now - this.lastLoudAt > silenceMs) {
         this.heardSpeech = false
         this.cb.onSilence?.()
+      }
+      if (opts.live) {
+        const segMs = (this.chunkSamples / this.inRate) * 1000
+        const paused = this.speechInSegment && now - this.lastLoudAt >= PAUSE_MS && segMs >= MIN_SEGMENT_MS
+        const tooLong = segMs >= MAX_SEGMENT_MS && level <= SPEECH_LEVEL
+        if (paused || tooLong) this.cb.onSegment?.(this.cutSegment())
       }
     }
     source.connect(gain).connect(this.node)
     if (this.ctx.state === 'suspended') await this.ctx.resume()
   }
 
-  async stop(): Promise<RecordingResult> {
-    const durationMs = performance.now() - this.startedAt
-    // Let the last worklet batch arrive.
-    await new Promise((r) => setTimeout(r, 120))
+  /** Encodes the current phrase (16 kHz mono WAV, silence trimmed) and starts a new one. */
+  private cutSegment(): RecordingResult {
     const raw = concatFloat32(this.chunks)
-    await this.dispose()
+    const durationMs = (raw.length / this.inRate) * 1000
+    this.chunks = []
+    this.chunkSamples = 0
+    this.speechInSegment = false
     const pcm = trimSilence(resample(raw, this.inRate, TARGET_SAMPLE_RATE))
     const s = stats(pcm)
-    return { wav: encodeWav(pcm, TARGET_SAMPLE_RATE), durationMs, peak: s.peak, rms: s.rms }
+    return { wav: encodeWav(pcm, TARGET_SAMPLE_RATE), durationMs, peak: s.peak, rms: s.rms, index: this.index++ }
+  }
+
+  /** Stops recording and returns the last phrase (or, without live typing, the whole recording). */
+  async stop(): Promise<RecordingResult> {
+    // Let the last worklet batch arrive.
+    await new Promise((r) => setTimeout(r, 120))
+    const result = this.cutSegment()
+    await this.dispose()
+    return result
   }
 
   async cancel(): Promise<void> {

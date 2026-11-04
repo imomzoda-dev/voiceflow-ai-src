@@ -15,6 +15,7 @@ export function registerAudioIpc(ctx: AppContext) {
   handle('dictation:cancel', z.tuple([]), () => ctx.dictation.cancel())
   handle('dictation:toggle', z.tuple([target]), (_e, o) => ctx.dictation.toggle({ target: o?.target ?? 'auto' }))
   handle('dictation:state', z.tuple([]), () => ctx.dictation.getState())
+  handle('dictation:pick', z.tuple([z.number().int().min(0).max(2)]), (_e, i) => ctx.dictation.choosePick(i))
   handle('dictation:pasteLast', z.tuple([]), () => ctx.dictation.pasteLast())
   handle('dictation:reprocess', z.tuple([zId, z.enum(['raw', 'correct', 'professional'])]), (_e, id, mode) => ctx.dictation.reprocess(id, mode))
 
@@ -23,7 +24,7 @@ export function registerAudioIpc(ctx: AppContext) {
   })
 
   // Recorder (overlay window) → main
-  handle('recorder:submit', z.tuple([z.string().max(64), z.instanceof(ArrayBuffer).or(z.instanceof(Uint8Array)), z.object({ durationMs: z.number().min(0), peak: z.number().min(0), rms: z.number().min(0) })]), async (e, sessionId, wav, meta) => {
+  handle('recorder:submit', z.tuple([z.string().max(64), z.instanceof(ArrayBuffer).or(z.instanceof(Uint8Array)), z.object({ durationMs: z.number().min(0), peak: z.number().min(0), rms: z.number().min(0), index: z.number().int().min(0).max(10_000), final: z.boolean() })]), async (e, sessionId, wav, meta) => {
     if (e.sender !== ctx.overlayWindow?.webContents) throw new UserFacingError('Only the recorder may submit audio')
     const buf = Buffer.from(wav instanceof ArrayBuffer ? new Uint8Array(wav) : wav)
     if (buf.length > MAX_WAV_BYTES) throw new UserFacingError('Recording is too long')

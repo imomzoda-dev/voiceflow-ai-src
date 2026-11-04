@@ -4,6 +4,9 @@ import { normalizeLanguageCode } from '../../../shared/languages'
 import { applyDictionary, buildVocabularyPrompt, type DictionaryEntry } from '../../../shared/dictionary'
 import { parseVoiceCommand } from '../../../shared/voice-commands'
 import { diffWords } from '../../../shared/diff'
+import { joinPhrases, pickerLanguages } from '../../../electron/services/dictation-service'
+import { DEFAULT_SETTINGS } from '../../../shared/settings'
+import { LANGUAGES } from '../../../shared/languages'
 
 describe('language detection', () => {
   it('recognises Tajik by its distinctive letters', () => {
@@ -78,5 +81,21 @@ describe('word diff', () => {
     const parts = diffWords(a, b)
     expect(parts.filter((p) => p.type !== 'added').map((p) => p.text).join('')).toBe(a)
     expect(parts.filter((p) => p.type !== 'removed').map((p) => p.text).join('')).toBe(b)
+  })
+})
+
+describe('live phrases and your languages', () => {
+  it('joins phrases with spaces, but not before punctuation', () => {
+    expect(joinPhrases(['Салом', ', дӯстон.', 'Hello!'])).toBe('Салом, дӯстон. Hello!')
+  })
+  it('puts the default language first and never repeats one', () => {
+    const s = structuredClone(DEFAULT_SETTINGS)
+    s.recognition.language = 'ru'
+    s.recognition.allowedLanguages = ['tg', 'ru', 'en', 'de']
+    expect(pickerLanguages(s)).toEqual(['ru', 'tg', 'en'])
+  })
+  it('offers every Whisper language', () => {
+    expect(LANGUAGES.length).toBeGreaterThanOrEqual(100)
+    expect(new Set(LANGUAGES.map((l) => l.code)).size).toBe(LANGUAGES.length)
   })
 })
