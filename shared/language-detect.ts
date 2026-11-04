@@ -135,6 +135,8 @@ function isStrongSignal(text: string, lang: string): boolean {
  */
 export function chooseAllowedLanguage(text: string, detected: string | null, allowed: string[]): string | null {
   if (!allowed.length) return detected
+  // Persian speech labelled "Tajik" (written in Persian script): it is Persian when the user speaks it.
+  if (detected === 'tg' && allowed.includes('fa') && ARABIC_SCRIPT.test(text) && !CYRILLIC.test(text)) return 'fa'
   if (detected && allowed.includes(detected)) return detected
   // Whisper often labels Tajik speech as Persian (same language family, different script).
   // Cyrillic text without Russian-only letters + "fa" from the engine is almost always Tajik.

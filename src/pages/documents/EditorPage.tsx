@@ -59,6 +59,8 @@ export function EditorPage({ docId }: { docId: string }) {
       content: doc ? (doc.content as object) : null,
       editable: !!doc,
       autofocus: doc ? 'end' : false,
+      // Each paragraph gets dir="auto": Persian, Arabic, Hebrew or Urdu lines read right-to-left, others left-to-right.
+      textDirection: 'auto',
       editorProps: { attributes: { class: 'vf-prose', spellcheck: 'true' } },
       onFocus: () => api().dictation.setEditorFocus(true),
       onBlur: () => api().dictation.setEditorFocus(false)

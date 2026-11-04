@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Download, Check, Trash2, FolderOpen, X, ShieldCheck, ShieldAlert, Cpu, FileSearch, Zap, Gauge } from 'lucide-react'
+import { Download, Check, Trash2, FolderOpen, X, ShieldCheck, ShieldAlert, Cpu, FileSearch, Zap, Gauge, Languages } from 'lucide-react'
 import type { DownloadProgress, EngineInfo, WhisperBinaryStatus, WhisperModelInfo } from '@shared/types'
+import { getLanguage } from '@shared/languages'
 import { api, cn, formatBytes } from '@/lib/utils'
 import { useSettings, toast } from '@/stores'
 import { Button } from '@/components/ui/button'
@@ -57,6 +58,11 @@ export function ModelManager({ compact = false }: { compact?: boolean }) {
   const gpuProgress = progress['whisper-gpu']
   const gpuBusy = gpuProgress?.state === 'downloading'
   const slow = !!engine?.lastMs && !!engine.lastAudioMs && engine.lastMs > engine.lastAudioMs * 1.2
+  const general = models.filter((m) => !m.language)
+  const special = models.filter((m) => m.language)
+  // A language model for one of the user's languages that is not installed yet.
+  const suggested = special.find((m) => !m.installed && m.language && settings.recognition.allowedLanguages.includes(m.language))
+  const langName = (code?: string) => getLanguage(code)?.native ?? code ?? ''
 
   return (
     <div className="flex flex-col gap-3">
@@ -122,10 +128,34 @@ export function ModelManager({ compact = false }: { compact?: boolean }) {
         </div>
       )}
 
+      {suggested && (
+        <div className="flex items-center gap-3 rounded-[12px] border border-accent/40 bg-accent-soft/40 px-3 py-2.5">
+          <Languages size={16} className="shrink-0 text-accent" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-medium text-fg">{t('settings.recognition.langModelSuggest', { language: langName(suggested.language) })}</div>
+            <div className="text-[11.5px] leading-snug text-muted">{t('settings.recognition.langModelSuggestHint', { language: langName(suggested.language), size: suggested.approxSizeMb })}</div>
+            {progress[suggested.id]?.state === 'downloading' && (
+              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-surface-3">
+                <div className="h-full bg-accent transition-[width]" style={{ width: `${pct(progress[suggested.id]) ?? 3}%` }} />
+              </div>
+            )}
+          </div>
+          {progress[suggested.id]?.state === 'downloading' ? (
+            <Button size="sm" variant="ghost" onClick={() => void api().models.cancel(suggested.id)}>
+              <X size={13} /> {t('common.cancel')}
+            </Button>
+          ) : (
+            <Button size="sm" variant="primary" onClick={() => void download(suggested.id)}>
+              <Download size={13} /> {t('settings.recognition.download')}
+            </Button>
+          )}
+        </div>
+      )}
+
       {!compact && <p className="text-[12px] leading-relaxed text-muted">{t('settings.recognition.modelsHint')}</p>}
 
       <div className="flex flex-col gap-1.5">
-        {models.map((m) => {
+        {[...general, ...special].map((m) => {
           const p = progress[m.id]
           const busy = p?.state === 'downloading' || p?.state === 'verifying'
           const inUse = settings.recognition.whisperModel === m.id
@@ -135,6 +165,7 @@ export function ModelManager({ compact = false }: { compact?: boolean }) {
                 <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-medium text-fg">
                   {m.label}
                   {m.recommended && <Badge tone="accent">{t('common.recommended')}</Badge>}
+                  {m.language && <Badge tone="accent">{t('settings.recognition.langModelBadge')}</Badge>}
                   {m.installed && (m.verified ? <ShieldCheck size={13} className="text-success" aria-label={t('settings.recognition.verified')} /> : <ShieldAlert size={13} className="text-warning" aria-label={t('settings.recognition.unverified')} />)}
                 </div>
                 <div className="mt-0.5 flex flex-wrap items-center gap-3 text-[11.5px] text-muted">
@@ -145,6 +176,7 @@ export function ModelManager({ compact = false }: { compact?: boolean }) {
                   <span className="flex items-center gap-1.5">
                     {t('settings.recognition.quality')} <Dots n={m.quality} />
                   </span>
+                  {m.source && <span className="truncate">{m.source}</span>}
                 </div>
                 {busy && (
                   <div className="mt-2 flex items-center gap-2">
@@ -163,7 +195,11 @@ export function ModelManager({ compact = false }: { compact?: boolean }) {
                 </Button>
               ) : m.installed ? (
                 <>
-                  {inUse ? (
+                  {m.language ? (
+                    <Badge tone={settings.recognition.languageModels ? 'success' : 'neutral'}>
+                      {settings.recognition.languageModels ? <Check size={11} /> : null} {t('settings.recognition.langModelUsedFor', { language: langName(m.language) })}
+                    </Badge>
+                  ) : inUse ? (
                     <Badge tone="success">
                       <Check size={11} /> {t('settings.recognition.inUse')}
                     </Badge>

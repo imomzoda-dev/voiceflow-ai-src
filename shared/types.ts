@@ -221,6 +221,9 @@ export interface WhisperModelInfo {
   speed: 1 | 2 | 3 | 4 | 5
   quality: 1 | 2 | 3 | 4 | 5
   recommended?: boolean
+  /** Trained for this one language (used for it automatically). */
+  language?: string
+  source?: string
   installed: boolean
   verified: boolean | null
   sizeBytes: number | null

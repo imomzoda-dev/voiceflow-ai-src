@@ -33,8 +33,32 @@ const MIN_SEGMENT_MS = 800
  * (`--audio-ctx 512`), ~4× faster on CPU than the default 30 s window with identical results.
  */
 export const MAX_SEGMENT_MS = 9_500
+
+/**
+ * Chunk index after which to cut a phrase that reached the length limit without a pause: the
+ * middle of the quietest ~250 ms stretch in the last SOFT_CUT_WINDOW_MS — the gap between two
+ * words — rather than a single quiet chunk, which can be a soft consonant inside a word.
+ */
+export function quietestCut(levels: number[], chunkMs: number): number {
+  const n = levels.length
+  if (n < 2 || chunkMs <= 0) return Math.max(1, n)
+  const run = Math.max(1, Math.round(250 / chunkMs))
+  const span = Math.min(n - 1, Math.ceil(SOFT_CUT_WINDOW_MS / chunkMs))
+  let best = n
+  let bestLevel = Infinity
+  for (let start = Math.max(1, n - span); start + run <= n; start++) {
+    let sum = 0
+    for (let i = start; i < start + run; i++) sum += levels[i]
+    // Ties go to the later gap: the phrase stays as long as possible.
+    if (sum <= bestLevel) {
+      bestLevel = sum
+      best = start + Math.floor(run / 2)
+    }
+  }
+  return Math.max(1, Math.min(n, best))
+}
 /** When a phrase hits the limit without a pause, it is cut at the quietest moment of its last part. */
-const SOFT_CUT_WINDOW_MS = 2_000
+const SOFT_CUT_WINDOW_MS = 3_000
 const SPEECH_LEVEL = 0.35
 
 export class MicRecorder {
@@ -106,7 +130,6 @@ export class MicRecorder {
       this.chunkSamples += ev.data.samples.length
       const level = levelFromRms(ev.data.rms)
       this.levels.push(level)
-      this.levels.push(level)
       this.cb.onLevel?.(level)
       const now = performance.now()
       if (level > SPEECH_LEVEL) {
@@ -128,20 +151,9 @@ export class MicRecorder {
     if (this.ctx.state === 'suspended') await this.ctx.resume()
   }
 
-  /** Chunk index of the quietest moment in the last SOFT_CUT_WINDOW_MS (so words aren't split). */
+  /** Where to cut a phrase that reached the length limit without a pause: see `quietestCut`. */
   private quietestCut(): number {
-    const n = this.chunks.length
-    const perChunkMs = n ? ((this.chunkSamples / this.inRate) * 1000) / n : 0
-    const span = perChunkMs ? Math.min(n - 1, Math.ceil(SOFT_CUT_WINDOW_MS / perChunkMs)) : 0
-    let best = n
-    let bestLevel = Infinity
-    for (let i = n - span; i < n; i++) {
-      if (this.levels[i] < bestLevel) {
-        bestLevel = this.levels[i]
-        best = i + 1
-      }
-    }
-    return Math.max(1, best)
+    return quietestCut(this.levels, ((this.chunkSamples / this.inRate) * 1000) / Math.max(1, this.chunks.length))
   }
 
   /** Encodes the current phrase (16 kHz mono WAV, silence trimmed) and starts a new one. */

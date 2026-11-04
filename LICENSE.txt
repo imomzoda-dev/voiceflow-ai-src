@@ -50,7 +50,12 @@ If you do not agree, do not install or use the Software.
    i18next (MIT); uiohook-napi (MIT) and libuiohook (GNU LGPL-3.0, shipped
    as a separate, replaceable native library in app.asar.unpacked).
    whisper.cpp (MIT) and Whisper models (MIT, OpenAI) are downloaded only
-   when you choose to, from their official sources.
+   when you choose to, from their official sources. Language models, also
+   downloaded only when you choose to: Tajik - Whisper Small fine-tuned by
+   abduaziz (huggingface.co/abduaziz/whisper-small-tajik, Apache-2.0),
+   converted to ggml and quantised; Persian - Whisper Large v3 Turbo
+   fine-tuned by givia (huggingface.co/givia/whisper-large-v3-turbo-persian,
+   CC BY 4.0). Both were trained in part on Google FLEURS (CC BY 4.0).
 
 7. NO WARRANTY
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS

@@ -300,4 +300,35 @@ describe('DictationService', () => {
     await new Promise((r) => setTimeout(r, 120))
     expect(errors).toEqual(['recorder-failed'])
   })
+
+  it('re-recognises Tajik that came out in Latin letters, with a Cyrillic priming prompt', async () => {
+    const { svc, recorder, transcribe, history } = setup({ transcript: { text: 'Nomi man Mehridin ast', language: 'tg' } })
+    transcribe.mockResolvedValueOnce({ text: 'Nomi man Mehridin ast', language: 'tg', provider: 'whisper-cpp', model: 'base' })
+    transcribe.mockResolvedValueOnce({ text: 'Номи ман Меҳридин аст', language: 'tg', provider: 'whisper-cpp', model: 'base' })
+    await speak(svc, recorder)
+    expect(transcribe).toHaveBeenCalledTimes(2)
+    const second = (transcribe.mock.calls as unknown as [{ language: string; prompt: string }][])[1][0]
+    expect(second.language).toBe('tg')
+    expect(second.prompt).toContain('тоҷикӣ')
+    expect(history.insert).toHaveBeenCalledWith(expect.objectContaining({ originalText: 'Номи ман Меҳридин аст' }))
+  })
+
+  it('Tajik model (no punctuation): capital only at the start, one full stop at the end', async () => {
+    const { svc, recorder, output, transcribe } = setup({ transcript: { text: 'номи ман меҳридин аст', language: 'tg', model: 'tajik-small-q5_1' } })
+    const s = svc as unknown as { d: { settings: () => AppSettings } }
+    s.d.settings().writing.mode = 'raw'
+    s.d.settings().voice.liveTyping = true
+    const proc = { process: vi.fn(async (t: string) => ({ final: t, corrected: null, status: 'skipped' as const })) }
+    ;(svc as unknown as { d: DictationDeps }).d.processor = proc as unknown as DictationDeps['processor']
+    transcribe.mockResolvedValueOnce({ text: 'номи ман меҳридин аст', language: 'tg', provider: 'whisper-cpp', model: 'tajik-small-q5_1' })
+    transcribe.mockResolvedValueOnce({ text: 'дар донишгоҳ мехонам', language: 'tg', provider: 'whisper-cpp', model: 'tajik-small-q5_1' })
+    await svc.start({ activation: 'hold' })
+    const id = recorder.start.mock.calls[0][0].sessionId as string
+    svc.recorderReady(id)
+    await svc.receiveAudio(id, wav(), { durationMs: 1000, peak: 0.4, rms: 0.2, index: 0, final: false })
+    await svc.stop()
+    await svc.receiveAudio(id, wav(), { durationMs: 1000, peak: 0.4, rms: 0.2, index: 1, final: true })
+    const typed = output.insertExternal.mock.calls.map((c) => c[0])
+    expect(typed).toEqual(['Номи ман меҳридин аст', ' дар донишгоҳ мехонам', '.'])
+  })
 })

@@ -103,11 +103,11 @@ export class LocalSpeechService extends EventEmitter {
     if (this.downloads.has(id)) return { ok: false, error: 'Already downloading' }
     const ctrl = new AbortController()
     this.downloads.set(id, ctrl)
-    const url = WHISPER_MODEL_BASE_URL + m.file
+    const url = m.url ?? WHISPER_MODEL_BASE_URL + m.file
     try {
       await mkdir(this.dirs.models, { recursive: true })
       this.progress({ id, receivedBytes: 0, totalBytes: null, state: 'downloading' })
-      const { sha256, size } = await fetchHuggingFaceChecksum(url)
+      const { sha256, size } = m.sha256 ? { sha256: m.sha256, size: null } : await fetchHuggingFaceChecksum(url)
       if (!sha256) log.warn(`No published checksum for ${m.file}; file will be stored as unverified`)
       const dest = join(this.dirs.models, m.file)
       const res = await downloadFile({

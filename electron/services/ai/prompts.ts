@@ -6,6 +6,7 @@
 import type { AssistantRequest, ProcessingMode } from '../../../shared/types'
 import { getLanguage } from '../../../shared/languages'
 import type { DictionaryEntry } from '../../../shared/dictionary'
+import { expectedScript } from '../../../shared/scripts'
 
 const OUTPUT_RULES = `Output rules:
 - Return ONLY the resulting text. No preface, no explanations, no quotes, no markdown code fences.
@@ -20,12 +21,18 @@ const TAJIK_RULES = `Tajik (тоҷикӣ, Cyrillic script) guidance:
 - Keep Russian loanwords and technical terms as the speaker used them; do not "Tajikify" or Russify them.
 - Do not convert to Persian (Arabic) script.`
 
+const PERSIAN_RULES = `Persian (فارسی) guidance:
+- Use Persian letters, not Arabic forms: «ی» not «ي», «ک» not «ك».
+- Use the zero-width non-joiner (نیم‌فاصله) where standard: «می‌روم», «نمی‌دانم», «کتاب‌ها», «خانه‌ای».
+- Persian punctuation: «،» comma, «؛» semicolon, «؟» question mark, quotation marks «…».
+- Do not convert to Tajik Cyrillic or to Latin letters.`
+
 const RUSSIAN_RULES = `Russian guidance: fix agreement, case endings, «не»/«ни», hyphenation and comma placement (participial and adverbial phrases, introductory words, subordinate clauses). Keep «ё» exactly as written by the speaker.`
 
 function languageNote(language: string | null): string {
   const info = getLanguage(language)
   if (!language) return 'Detect the language of the text yourself and keep it.'
-  return `The text was recognised as ${info?.english ?? language} (${language}). Answer in that same language.`
+  return `The text was recognised as ${info?.english ?? language} (${language}). Answer in that same language, written in its standard alphabet (${expectedScript(language)} script); never transliterate it into another alphabet.`
 }
 
 function dictionaryNote(entries: DictionaryEntry[]): string {
@@ -51,6 +58,7 @@ Do not: add new content, change facts, numbers, names or meaning, or change the 
   }
   const parts = [base[mode], languageNote(language)]
   if (language === 'tg' || language === null) parts.push(TAJIK_RULES)
+  if (language === 'fa') parts.push(PERSIAN_RULES)
   if (language === 'ru' || language === null) parts.push(RUSSIAN_RULES)
   parts.push(OUTPUT_RULES)
   const dict = dictionaryNote(dictionary)

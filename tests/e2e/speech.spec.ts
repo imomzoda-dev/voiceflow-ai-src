@@ -14,9 +14,13 @@ import { launch, completeOnboarding } from './helpers'
 const dir = process.env.VOICEFLOW_SPEECH_DIR
 const MODEL = process.env.VOICEFLOW_SPEECH_MODEL ?? 'base'
 
+// Your languages for each case and which one the picker chooses. tg.wav / fa.wav: Google FLEURS (CC BY 4.0).
+// The Tajik case uses the Tajik language model when it is in the profile (ggml-tajik-small-q5_1.bin).
 const cases = [
-  { file: 'ru.wav', lang: 'ru', expectWords: ['обсудили', 'план', 'неделю', 'задачи'] },
-  { file: 'en.wav', lang: 'en', expectWords: ['test', 'voice', 'typing', 'document'] }
+  { file: 'ru.wav', lang: 'ru', langs: ['tg', 'ru', 'en'], expectWords: ['обсудили', 'план', 'неделю', 'задачи'] },
+  { file: 'en.wav', lang: 'en', langs: ['tg', 'ru', 'en'], expectWords: ['test', 'voice', 'typing', 'document'] },
+  { file: 'tg.wav', lang: 'tg', langs: ['tg', 'ru', 'en'], expectWords: ['муқоиса', 'маълумоти', 'ҷойҳо', 'дастрас', 'пешниҳодгардида', 'мебошанд'], script: /\p{Script=Cyrillic}/u },
+  { file: 'fa.wav', lang: 'fa', langs: ['fa', 'tg', 'en'], expectWords: ['محققان', 'داشتند', 'نمونه', 'حیوان', 'جوجه'], script: /\p{Script=Arabic}/u }
 ]
 
 for (const c of cases) {
@@ -44,8 +48,10 @@ for (const c of cases) {
       const model = (await p.evaluate(() => window.voiceflow.models.catalog())).find((m) => m.id === MODEL)!
       console.log(`whisper-cli: ${bin.path} (${bin.version ?? 'unknown version'}) · model ${MODEL} verified=${model.verified}`)
       // Your languages: Tajik (default), Russian, English. The picker chooses this clip's language.
-      await p.evaluate((m) => window.voiceflow.settings.update('recognition', { speechProviderId: 'whisper-cpp', whisperModel: m, languageMode: 'multiple', language: 'tg', allowedLanguages: ['tg', 'ru', 'en'] }), MODEL)
+      await p.evaluate(([m, langs]) => window.voiceflow.settings.update('recognition', { speechProviderId: 'whisper-cpp', whisperModel: m, languageMode: 'multiple', language: langs[0], allowedLanguages: langs, languageModels: true }), [MODEL, c.langs] as const)
       await p.evaluate(() => window.voiceflow.settings.update('writing', { mode: 'raw' }))
+      // VOICEFLOW_SAVE_AUDIO=1 keeps each phrase's WAV in <profile>/audio for inspection.
+      await p.evaluate((keep) => window.voiceflow.settings.update('storage', { saveAudio: keep }), !!process.env.VOICEFLOW_SAVE_AUDIO)
       await p.evaluate(() => window.voiceflow.settings.update('voice', { languagePicker: true, pickerSeconds: 2, liveTyping: true }))
 
       const started = Date.now()
@@ -53,8 +59,8 @@ for (const c of cases) {
       expect(s.ok, s.error).toBe(true)
       const pick = await p.evaluate(() => window.voiceflow.dictation.state())
       expect(pick.phase).toBe('selecting')
-      expect(pick.pickLanguages).toEqual(['tg', 'ru', 'en'])
-      await p.evaluate((i) => window.voiceflow.dictation.pick(i), c.lang === 'ru' ? 1 : 2)
+      expect(pick.pickLanguages).toEqual(c.langs)
+      await p.evaluate((i) => window.voiceflow.dictation.pick(i), c.langs.indexOf(c.lang))
       await expect.poll(async () => (await p.evaluate(() => window.voiceflow.dictation.state())).phase).toBe('recording')
       // Record exactly the clip length: Chromium's fake microphone loops the file.
       const clipMs = ((statSync(join(dir!, c.file)).size - 44) / (48000 * 2)) * 1000
@@ -69,7 +75,12 @@ for (const c of cases) {
       expect(rec?.language).toBe(c.lang)
       const text = rec!.finalText.toLowerCase()
       const hits = c.expectWords.filter((w) => text.includes(w))
-      expect(hits.length, `recognised: ${rec!.finalText}`).toBeGreaterThanOrEqual(3)
+      expect(hits.length, `recognised: ${rec!.finalText}`).toBeGreaterThanOrEqual(Math.min(4, c.expectWords.length - 1))
+      if (c.script) {
+        // Every letter in the language's own alphabet (no Latin or Persian letters in Tajik, and vice versa).
+        const letters = [...rec!.finalText].filter((ch) => /\p{L}/u.test(ch))
+        expect(letters.filter((ch) => c.script!.test(ch)).length / letters.length, rec!.finalText).toBeGreaterThan(0.97)
+      }
     } finally {
       await l.close({ keepData: true })
     }

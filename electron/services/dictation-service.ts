@@ -20,6 +20,8 @@ import type { DictationErrorCode, DictationResult, DictationState, DictationTarg
 import { applyDictionary, buildVocabularyPrompt, type DictionaryEntry } from '../../shared/dictionary'
 import { chooseAllowedLanguage, detectLanguages, type DetectionSource, type LanguageSegment } from '../../shared/language-detect'
 import { parseVoiceCommand } from '../../shared/voice-commands'
+import { buildPrompt, capitalizeStart, endsSentence, fullStop, isPromptEcho, normalizeTranscript, scriptShare, wrongScript } from '../../shared/scripts'
+import { catalogModel } from './speech/model-catalog'
 import { SpeechError, type SpeechProvider } from './speech/types'
 import type { TextProcessor } from './ai/text-processor'
 import type { DictationsRepository } from '../db/dictations-repo'
@@ -43,13 +45,18 @@ export interface OutputPort {
   copyText(text: string): Promise<void>
 }
 
-export type PrewarmableSpeech = SpeechProvider & { prewarm?: () => void }
+export type PrewarmableSpeech = SpeechProvider & {
+  prewarm?: () => void
+  /** A model trained for one language: it already writes the right script, and a priming sentence lowers its accuracy. */
+  languageModel?: boolean
+}
 
 export interface DictationDeps {
   settings: () => AppSettings
   recorder: RecorderPort
   output: OutputPort
-  speech: () => Promise<PrewarmableSpeech>
+  /** Speech engine; with a language, the one best for it (e.g. a dedicated Tajik model). */
+  speech: (language?: string | null) => Promise<PrewarmableSpeech>
   processor: Pick<TextProcessor, 'process'>
   dictionary: () => Promise<DictionaryEntry[]>
   history: Pick<DictationsRepository, 'insert' | 'update' | 'get' | 'latestSuccessful'>
@@ -98,6 +105,8 @@ interface Session {
   finished: boolean
   /** Any phrase had real sound in it (otherwise the microphone is probably muted). */
   heardAudio: boolean
+  /** Language of a model that writes without punctuation, used in this session (adds the final full stop). */
+  plainText?: string
   finalArrived: boolean
   finalTimer: NodeJS.Timeout | null
 }
@@ -305,6 +314,8 @@ export class DictationService extends EventEmitter {
     const s = this.d.settings()
     this.clearSessionTimers(sess)
     sess.language = language
+    // Load the engine for the chosen language (a dedicated model, if installed) while the user starts talking.
+    if (language) void this.d.speech(language).then((p) => p.prewarm?.()).catch(() => undefined)
     sess.startedAt = Date.now()
     sess.holdMode = sess.activation === 'hold' && (this.d.isDictateHeld?.() ?? false)
     // Decide where text goes when the user starts speaking (live phrases are inserted right away).
@@ -436,18 +447,55 @@ export class DictationService extends EventEmitter {
     let kept = false
     try {
       await writeFile(wavPath, wav)
-      const speech = await this.d.speech()
       const dictionary = await this.d.dictionary()
       const rec = s.recognition
       const forced = sess.language
-      let tr = await speech.transcribe({ wavPath, wav, language: forced, prompt: buildVocabularyPrompt(dictionary, forced), signal: sess.abort.signal, durationMs: meta.durationMs })
+      let speech = await this.d.speech(forced)
+      const run = (language: string | null, forcePrime = false) =>
+        speech.transcribe({
+          wavPath,
+          wav,
+          language,
+          prompt: speech.languageModel ? buildVocabularyPrompt(dictionary, language) : buildPrompt(language, buildVocabularyPrompt(dictionary, language), forcePrime),
+          signal: sess.abort.signal,
+          durationMs: meta.durationMs
+        })
+      let tr = await run(forced)
       if (!forced && rec.languageMode === 'multiple' && rec.allowedLanguages.length && speech.getCapabilities().forcedLanguage) {
         const pick = chooseAllowedLanguage(tr.text, tr.language, rec.allowedLanguages)
         if (pick && pick !== tr.language) {
           log.info('Detected language outside your languages; re-running', { detected: tr.language, forced: pick })
-          tr = await speech.transcribe({ wavPath, wav, language: pick, prompt: buildVocabularyPrompt(dictionary, pick), signal: sess.abort.signal, durationMs: meta.durationMs })
+          speech = await this.d.speech(pick)
+          tr = await run(pick)
           tr.language = pick
         }
+      }
+      // Wrong alphabet (Tajik in Latin letters or Persian script, Urdu in Hindi script…):
+      // recognise again in that language with a priming sentence in the right script.
+      const lang = forced ?? tr.language
+      // Detected (not chosen) a language that has its own model installed: recognise with that model.
+      if (!forced && lang && !speech.languageModel) {
+        const dedicated = await this.d.speech(lang)
+        if (dedicated.languageModel) {
+          log.info('Detected a language with its own model; re-running with it', { language: lang })
+          speech = dedicated
+          tr = { ...(await run(lang)), language: lang }
+        }
+      }
+      if (lang && !speech.languageModel && wrongScript(tr.text, lang) && speech.getCapabilities().forcedLanguage) {
+        log.info('Transcript is not in the language’s script; re-running with a script prompt', { language: lang })
+        if (!forced) speech = await this.d.speech(lang)
+        const again = await run(lang, true)
+        if (again.text.trim() && scriptShare(again.text, lang) >= scriptShare(tr.text, lang)) tr = { ...again, language: lang }
+      }
+      if (isPromptEcho(tr.text, lang)) tr = { ...tr, text: '' }
+      tr = { ...tr, text: normalizeTranscript(tr.text, tr.language ?? lang) }
+      // Models that write without punctuation (the Tajik model): capitalise the phrase when it starts
+      // a sentence; the closing full stop is added once, when the dictation ends (see finish()).
+      if (tr.model && catalogModel(tr.model)?.plainText) {
+        sess.plainText = tr.language ?? lang ?? 'und'
+        const last = sess.parts.filter((p) => !p.command).at(-1)?.final
+        if (!last || endsSentence(last)) tr = { ...tr, text: capitalizeStart(tr.text, tr.language ?? lang) }
       }
       if (this.session !== sess) return
       sess.provider = tr.provider
@@ -521,6 +569,14 @@ export class DictationService extends EventEmitter {
       if (sess.heardAudio) this.fail('empty-transcript', 'Nothing was recognised')
       else this.fail('no-audio', 'No speech was detected — check the microphone')
       return
+    }
+    // Close the dictation's last sentence for models that write without punctuation.
+    const lastPart = textParts.at(-1)
+    if (sess.plainText && lastPart?.final && !endsSentence(lastPart.final)) {
+      const stop = fullStop(sess.plainText)
+      lastPart.final += stop
+      if (s.voice.liveTyping && sess.resolvedTarget === 'editor') this.d.output.insertIntoEditor(stop, sess.id)
+      else if (s.voice.liveTyping && sess.resolvedTarget === 'external') await this.d.output.insertExternal(stop, { restoreClipboard: !s.voice.keepInClipboard })
     }
     const final = joinPhrases(textParts.map((p) => p.final))
     const original = joinPhrases(sess.parts.map((p) => p.original))

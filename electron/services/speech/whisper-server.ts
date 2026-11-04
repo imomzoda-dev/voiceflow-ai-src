@@ -13,6 +13,7 @@ import { dirname, join } from 'node:path'
 import { SpeechError, cleanTranscript, type SpeechProvider, type TranscriptionRequest, type TranscriptionResult } from './types'
 import { normalizeLanguageCode } from '../../../shared/languages'
 import { encodeWav } from '../../../shared/audio'
+import { hasRepeatedPhrase } from '../../../shared/scripts'
 import { createLogger } from '../../main/logger'
 
 const log = createLogger('whisper-server')
@@ -27,6 +28,8 @@ export interface ServerConfig {
   modelId: string
   threads: number
   useGpu: boolean
+  /** Encoder window in frames (512 = 10 s, fast for phrases ≤ 9.5 s); 0 = the model's full 30 s. */
+  audioCtx?: number
 }
 
 /** whisper-server lives next to whisper-cli in official builds and in Homebrew's whisper-cpp. */
@@ -63,6 +66,8 @@ export class WhisperServerManager {
   private idle: NodeJS.Timeout | null = null
   private stderrTail = ''
   private failedCli = new Set<string>()
+  /** When the last phrase was recognised (to report the engine that is actually in use). */
+  lastAt = 0
   info: { backend: 'gpu' | 'cpu' | null; device: string | null; lastAudioMs: number | null; lastMs: number | null } = { backend: null, device: null, lastAudioMs: null, lastMs: null }
 
   isRunning() {
@@ -70,7 +75,7 @@ export class WhisperServerManager {
   }
 
   private configKey(c: ServerConfig) {
-    return `${c.cliPath}|${c.modelPath}|${c.threads}|${c.useGpu}`
+    return `${c.cliPath}|${c.modelPath}|${c.threads}|${c.useGpu}|${c.audioCtx ?? 512}`
   }
 
   /** Starts (or reuses) the server; a GPU build that cannot start is remembered and the CPU build is used. */
@@ -102,7 +107,9 @@ export class WhisperServerManager {
     const threads = c.threads > 0 ? c.threads : Math.max(1, Math.min(16, cpus().length - 1))
     // --audio-ctx 512 = 10.24 s encoder window (phrases are cut to ≤ 9.5 s by the recorder):
     // ~4× faster than the default 30 s window on CPU, identical transcripts in our tests.
-    const args = ['-m', c.modelPath, '--host', '127.0.0.1', '--port', String(this.port), '-t', String(threads), '-l', 'auto', '-ac', '512']
+    const audioCtx = c.audioCtx ?? 512
+    const args = ['-m', c.modelPath, '--host', '127.0.0.1', '--port', String(this.port), '-t', String(threads), '-l', 'auto']
+    if (audioCtx > 0) args.push('-ac', String(audioCtx))
     if (!c.useGpu) args.push('-ng')
     log.info('starting whisper-server', { model: c.modelId, port: this.port, threads })
     const child = spawn(bin, args, { windowsHide: true, stdio: ['ignore', 'ignore', 'pipe'] })
@@ -182,11 +189,22 @@ export class WhisperServerManager {
 
   async transcribe(c: ServerConfig, req: TranscriptionRequest): Promise<{ text: string; language: string | null }> {
     const port = await this.ensure(c)
+    // Beam search (5): fewer errors and no repetition loops; free on a GPU, ~25% slower on a CPU,
+    // where greedy decoding is used and a phrase is redone with beam search only if it loops.
+    const onGpu = this.info.backend === 'gpu'
+    const first = await this.request(port, req, onGpu ? 5 : 0)
+    if (onGpu || !hasRepeatedPhrase(first.text)) return first
+    log.info('Repetition in the transcript; recognising the phrase again with beam search')
+    return this.request(port, req, 5)
+  }
+
+  private async request(port: number, req: TranscriptionRequest, beamSize: number): Promise<{ text: string; language: string | null }> {
     const form = new FormData()
     form.append('file', new Blob([new Uint8Array(req.wav)], { type: 'audio/wav' }), 'speech.wav')
     form.append('response_format', 'verbose_json')
     form.append('language', req.language ?? 'auto')
     form.append('temperature', '0')
+    if (beamSize > 1) form.append('beam_size', String(beamSize))
     if (req.prompt) form.append('prompt', req.prompt)
     const timeout = AbortSignal.timeout(Math.max(120_000, req.durationMs * 12))
     const started = Date.now()
@@ -201,6 +219,7 @@ export class WhisperServerManager {
     this.touch()
     if (!res.ok) throw new SpeechError('transcription-failed', `whisper-server returned HTTP ${res.status}`)
     this.info = { ...this.info, lastAudioMs: Math.round(req.durationMs), lastMs: Date.now() - started }
+    this.lastAt = Date.now()
     log.info('Transcribed', { ms: this.info.lastMs, audioMs: this.info.lastAudioMs, backend: this.info.backend })
     const j = (await res.json()) as VerboseJson
     // `text` joins segments with newlines that can split a word ("расп\nределили"): join segments instead.

@@ -76,7 +76,9 @@ export const recognitionSchema = z.object({
   allowedLanguages: z.array(langCode).max(20),
   quality: z.enum(['fast', 'balanced', 'accurate']),
   threads: z.number().int().min(0).max(64),
-  useGpu: z.boolean()
+  useGpu: z.boolean(),
+  /** Use a model trained for a language (e.g. Tajik) for that language, when installed. */
+  languageModels: z.boolean()
 })
 
 export const writingSchema = z.object({
@@ -182,7 +184,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
     allowedLanguages: ['tg', 'ru', 'en'],
     quality: 'balanced',
     threads: 0,
-    useGpu: true
+    useGpu: true,
+    languageModels: true
   },
   writing: {
     mode: 'correct',

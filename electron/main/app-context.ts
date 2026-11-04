@@ -17,7 +17,7 @@ import { LocalSpeechService } from '../services/speech/local-speech-service'
 import { WhisperCppProvider } from '../services/speech/whisper-cpp'
 import { SpeechError } from '../services/speech/types'
 import { WhisperServerManager, WhisperServerProvider, serverBinaryFor } from '../services/speech/whisper-server'
-import { catalogModel } from '../services/speech/model-catalog'
+import { catalogModel, languageModelFor } from '../services/speech/model-catalog'
 import { UiohookBridge } from '../native/uiohook-bridge'
 import type { NativeInputBridge } from '../native/input-bridge'
 import { HotkeyManager } from './hotkey-manager'
@@ -65,6 +65,21 @@ export class AppContext {
   readonly updater: UpdaterService
   readonly clipboard: ClipboardService
   readonly whisperServer = new WhisperServerManager()
+  /** One engine per language model (Tajik, Persian…), so switching languages never reloads a model. */
+  private readonly languageServers = new Map<string, WhisperServerManager>()
+
+  private languageServer(modelId: string): WhisperServerManager {
+    let m = this.languageServers.get(modelId)
+    if (!m) this.languageServers.set(modelId, (m = new WhisperServerManager()))
+    return m
+  }
+
+  /** Stats of whichever engine recognised the latest phrase. */
+  engineInfo() {
+    let latest = this.whisperServer
+    for (const m of this.languageServers.values()) if (m.lastAt > latest.lastAt) latest = m
+    return latest.info
+  }
 
   mainWindow: BrowserWindow | null = null
   overlayWindow: BrowserWindow | null = null
@@ -124,7 +139,7 @@ export class AppContext {
           return r
         }
       },
-      speech: () => this.speechProvider(),
+      speech: (language) => this.speechProvider(language),
       processor: this.processor,
       dictionary: () => this.dictionary.list(),
       history: this.dictations,
@@ -330,32 +345,44 @@ export class AppContext {
     return { ok: true }
   }
 
-  async speechProvider(): Promise<PrewarmableSpeech> {
+  async speechProvider(language?: string | null): Promise<PrewarmableSpeech> {
+    const { provider, languageModel } = await this.speechProviderFor(language)
+    return languageModel ? Object.assign(provider, { languageModel: true }) : provider
+  }
+
+  private async speechProviderFor(language?: string | null): Promise<{ provider: PrewarmableSpeech; languageModel: boolean }> {
     const s = this.settings.get()
     const r = s.recognition
     if (r.speechProviderId === 'whisper-cpp') {
       const bin = await this.localSpeech.binaryStatus()
-      const modelPath = this.localSpeech.modelPath(r.whisperModel)
+      // A model trained for this language (e.g. Tajik) wins over the general model, when installed.
+      const special = language && r.languageModels ? languageModelFor(language) : undefined
+      const specialPath = special ? this.localSpeech.modelPath(special.id) : null
+      const modelId = specialPath && special ? special.id : r.whisperModel
+      const modelPath = specialPath ?? this.localSpeech.modelPath(r.whisperModel)
+      const server = specialPath && special ? this.languageServer(special.id) : this.whisperServer
+      const audioCtx = specialPath && special?.fullAudioContext ? 0 : 512
       // Prefer the persistent server (the model stays loaded: fast phrase-by-phrase live typing).
       const gpu = r.useGpu ? this.localSpeech.gpuBinary() : null
       if (gpu && modelPath && serverBinaryFor(gpu)) {
-        return new WhisperServerProvider(this.whisperServer, { cliPath: gpu, fallbackCliPath: bin.path && serverBinaryFor(bin.path) ? bin.path : null, modelPath, modelId: r.whisperModel, threads: r.threads, useGpu: true })
+        return { languageModel: !!specialPath, provider: new WhisperServerProvider(server, { cliPath: gpu, fallbackCliPath: bin.path && serverBinaryFor(bin.path) ? bin.path : null, modelPath, modelId, threads: r.threads, useGpu: true, audioCtx }) }
       }
       if (bin.path && modelPath && serverBinaryFor(bin.path)) {
-        return new WhisperServerProvider(this.whisperServer, { cliPath: bin.path, modelPath, modelId: r.whisperModel, threads: r.threads, useGpu: r.useGpu })
+        return { languageModel: !!specialPath, provider: new WhisperServerProvider(server, { cliPath: bin.path, modelPath, modelId, threads: r.threads, useGpu: r.useGpu, audioCtx }) }
       }
-      return new WhisperCppProvider({
+      const cli = new WhisperCppProvider({
         binaryPath: bin.path,
-        modelPath: this.localSpeech.modelPath(r.whisperModel),
-        modelId: r.whisperModel,
+        modelPath,
+        modelId,
         threads: r.threads,
         quality: r.quality,
         useGpu: r.useGpu
       })
+      return { languageModel: !!specialPath, provider: cli }
     }
     const p = await this.providers.get(r.speechProviderId)
     if (p && !p.isLocal && !s.privacy.allowCloud) throw new SpeechError('cloud-not-allowed', 'Cloud processing is disabled')
-    return this.providers.transcriber(r.speechProviderId)
+    return { languageModel: false, provider: await this.providers.transcriber(r.speechProviderId) }
   }
 
   /* ------------------------------- maintenance ------------------------------- */
@@ -394,6 +421,7 @@ export class AppContext {
     this.hotkeys.stop()
     this.updater.stop()
     this.whisperServer.stop()
+    for (const m of this.languageServers.values()) m.stop()
     this.tray.destroy()
     try {
       this.h.close()

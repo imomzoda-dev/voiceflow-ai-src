@@ -297,6 +297,9 @@ export function RecognitionSection() {
             <Field inline icon={<IconTile icon={Cpu} color="green" />} label={t('settings.recognition.gpu')}>
               <Switch checked={r.useGpu} onCheckedChange={(v) => void update('recognition', { useGpu: v })} />
             </Field>
+            <Field inline icon={<IconTile icon={Languages} color="indigo" />} label={t('settings.recognition.languageModels')} hint={t('settings.recognition.languageModelsHint')}>
+              <Switch checked={r.languageModels} onCheckedChange={(v) => void update('recognition', { languageModels: v })} />
+            </Field>
           </Group>
         </>
       )}

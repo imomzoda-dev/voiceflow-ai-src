@@ -1,3 +1,4 @@
+import { catalogModel } from '../services/speech/model-catalog'
 import { dialog } from 'electron'
 import { z } from 'zod'
 import { handle, onSend, zId, zText, UserFacingError } from './guard'
@@ -51,7 +52,13 @@ export function registerAudioIpc(ctx: AppContext) {
 
   // Local models / whisper.cpp
   handle('models:catalog', z.tuple([]), () => ctx.localSpeech.catalog())
-  handle('models:download', z.tuple([z.string().max(64)]), (_e, id) => ctx.localSpeech.download(id))
+  handle('models:download', z.tuple([z.string().max(64)]), async (_e, id) => {
+    const r = await ctx.localSpeech.download(id)
+    // A language model is loaded right away, so the first dictation in that language is fast.
+    const lang = catalogModel(id)?.language
+    if (r.ok && lang) void ctx.speechProvider(lang).then((p) => p.prewarm?.()).catch(() => undefined)
+    return r
+  })
   handle('models:cancel', z.tuple([z.string().max(64)]), (_e, id) => ctx.localSpeech.cancel(id))
   handle('models:remove', z.tuple([z.string().max(64)]), (_e, id) => ctx.localSpeech.remove(id))
   handle('models:binaryStatus', z.tuple([]), () => ctx.localSpeech.binaryStatus())
@@ -62,7 +69,7 @@ export function registerAudioIpc(ctx: AppContext) {
     if (r.ok) void ctx.speechProvider().then((p) => p.prewarm?.()).catch(() => undefined)
     return r
   })
-  handle('models:engineInfo', z.tuple([]), () => ctx.whisperServer.info)
+  handle('models:engineInfo', z.tuple([]), () => ctx.engineInfo())
   handle('models:chooseBinary', z.tuple([]), async () => {
     const opts: Electron.OpenDialogOptions = {
       properties: ['openFile'],

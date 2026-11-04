@@ -1,4 +1,4 @@
-# Feature status — VoiceFlow AI 1.0.2
+# Feature status — VoiceFlow AI 1.0.3
 
 Checked on **Windows 11 x64** (Electron 45.2, Node 24) on 2026-11-04. **Nothing has been run on macOS yet.**
 
@@ -73,6 +73,20 @@ What the unit tests cover:
 | Text always left on the clipboard (also when pasting fails) | ✅ Unit tests |
 | whisper-server engine (model stays loaded, prewarmed while choosing) | ✅ Real runs: ready in ≈0.5 s, ≈1.8 s per phrase with the Base model on CPU |
 | Installer shows "Update x → y" over an installed version | ✅ Seen on this PC: "Обновление VoiceFlow AI — Версия 0.1.0 → 1.0.1" with «Обновить» (closed without installing) |
+
+## 1.0.3 — languages and alphabets
+
+Measured with Google FLEURS recordings (dev split, 40 clips, sentences not in any training set; word error rate after lower-casing and removing punctuation).
+
+| Feature | Status |
+|---|---|
+| Tajik language model (Whisper Small fine-tuned for Tajik, ggml q5_1, 190 MB), used automatically for Tajik | ✅ Tajik: **5.2% WER, 100% Cyrillic** (Large v3 Turbo: 102% WER, 28% Cyrillic — Latin and Persian letters). Real-speech E2E through the microphone pipeline · 🟡 conversational Tajik not measured (FLEURS is read speech) |
+| Persian language model (Whisper Large v3 Turbo fine-tuned for Persian incl. conversational speech, ggml q5_0, 574 MB), used automatically for Persian | ✅ Persian phrases ≤ 10 s: **6.1% WER** with beam search (Large v3 Turbo with a Persian prompt: 20.5%; without: 29.3% on full clips), 100% Persian script, punctuation included. Real-speech E2E |
+| Beam search (5) on the GPU; on the CPU greedy decoding, redone with beam search when a phrase repeats itself | ✅ Fixed a real Persian loop ("…جوان باشد، باز همین دم یک دایناسر جوان باشد"); beam search also lowered Tajik errors 6.6% → 5.1% |
+| Script layer for all ~100 languages: expected alphabet per language, "wrong alphabet" check with a re-run using a priming sentence in the right script, Latin look-alikes inside Cyrillic words fixed, Persian ی/ک and «می‌» | ✅ Unit tests. Priming alone lifts Turbo's Tajik Cyrillic share from 28% to 98% (accuracy stays poor without the Tajik model) |
+| Right-to-left text (Persian, Arabic, Urdu, Hebrew) in documents, history, widget | ✅ `dir=auto` per paragraph / `unicode-bidi: plaintext` · 🟡 checked in code, not visually |
+| Fixed: long phrases cut in the middle of a word (loudness readings were stored twice, so the cut point came from the wrong moment) | ✅ Unit test; real Tajik/Persian E2E keep "пешниҳодгардида" / "نمونه" whole |
+| Models without punctuation: capital at the start of a sentence, one full stop at the end of the dictation | ✅ Unit test |
 
 ## 1.0.2 fixes
 

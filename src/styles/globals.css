@@ -230,6 +230,14 @@ textarea,
   user-select: text;
 }
 
+/* Dictated text can be in any language: each paragraph takes its direction from its own first
+   letter, so Persian / Arabic / Urdu / Hebrew read right-to-left next to left-to-right text. */
+.selectable,
+textarea {
+  unicode-bidi: plaintext;
+  text-align: start;
+}
+
 *:focus-visible {
   outline: 3px solid var(--ring);
   outline-offset: 1px;
