@@ -42,7 +42,7 @@ export function DictationButton({ compact = false, target = 'auto', className }:
         {busy ? <Loader2 size={17} className="animate-spin" /> : recording ? <Square size={13} fill="currentColor" /> : <Mic size={17} strokeWidth={2.3} />}
         {!compact && <span className="truncate">{busy ? t(`status.${phase}`) : label}</span>}
       </span>
-      {!compact && !recording && !busy && settings?.voice.activationMode !== 'manual' && <span className="relative ml-auto rounded-full bg-white/20 px-2 py-[1px] text-[11.5px] font-semibold">{hotkey}</span>}
+      {!compact && !recording && !busy && settings?.voice.activationMode !== 'manual' && <span className="relative ml-auto shrink-0 whitespace-nowrap rounded-full bg-white/20 px-2 py-[1px] text-[11.5px] font-semibold">{hotkey}</span>}
     </button>
   )
   return compact ? (

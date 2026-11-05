@@ -54,12 +54,13 @@ test('macOS: Liquid Glass, Classic and Solid follow the app theme', async () => 
         // The native material and menus use the app's theme, not the Mac's.
         const native = await l.app.evaluate(({ nativeTheme }) => ({ source: nativeTheme.themeSource, dark: nativeTheme.shouldUseDarkColors }))
         expect(native).toEqual({ source: theme, dark: theme === 'dark' })
-        await p.waitForTimeout(700)
-        const id = await l.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => x.getTitle() === 'VoiceFlow AI')!.getMediaSourceId())
-        const windowId = id.split(':')[1]
+        await p.waitForTimeout(1500)
+        // The screen area of the window (not the window alone): only the composited screen shows
+        // what shines through the glass from behind.
+        const b = await l.app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => x.getTitle() === 'VoiceFlow AI')!.getBounds())
         const file = join(out, `mac-${material}-${theme}.png`)
         try {
-          execFileSync('screencapture', ['-x', '-o', `-l${windowId}`, file])
+          execFileSync('screencapture', ['-x', `-R${b.x},${b.y},${b.width},${b.height}`, file])
         } catch {
           await p.screenshot({ path: file })
         }
