@@ -83,6 +83,8 @@ describe('hotkey helpers', () => {
     expect(bindingToAccelerator({ keycode: 3640, ctrl: false, shift: false, alt: false, meta: false }, 'win32')).toBeNull()
     expect(bindingFromDomEvent({ code: 'ControlLeft', ctrlKey: true, shiftKey: false, altKey: false, metaKey: false })).toEqual({ ok: false, reason: 'pending' })
     expect(formatBinding({ keycode: 31, ctrl: false, shift: true, alt: false, meta: true }, 'darwin')).toBe('⇧⌘S')
+    expect(formatBinding({ keycode: 3640, ctrl: false, shift: false, alt: false, meta: false }, 'darwin')).toBe('Right ⌥')
+    expect(formatBinding({ keycode: 3640, ctrl: false, shift: false, alt: false, meta: false }, 'win32')).toBe('Right Alt')
   })
 
   it('flags unsafe and system-reserved bindings', () => {

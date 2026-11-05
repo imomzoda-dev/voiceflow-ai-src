@@ -141,6 +141,9 @@ export function bindingFromDomEvent(e: {
   }
 }
 
+/** Mac keyboards name these keys with symbols. */
+const MAC_LABELS: Record<string, string> = { AltRight: 'Right ⌥', ControlRight: 'Right ⌃', MetaRight: 'Right ⌘', ShiftRight: 'Right ⇧' }
+
 export function formatBinding(b: HotkeyBinding | null | undefined, platform: string): string {
   if (!b) return '—'
   const mac = platform === 'darwin'
@@ -149,7 +152,8 @@ export function formatBinding(b: HotkeyBinding | null | undefined, platform: str
   if (b.alt) parts.push(mac ? '⌥' : 'Alt')
   if (b.shift) parts.push(mac ? '⇧' : 'Shift')
   if (b.meta) parts.push(mac ? '⌘' : 'Win')
-  parts.push(keyDefFromKeycode(b.keycode)?.label ?? `Key ${b.keycode}`)
+  const def = keyDefFromKeycode(b.keycode)
+  parts.push((mac && def ? MAC_LABELS[def.code] : undefined) ?? def?.label ?? `Key ${b.keycode}`)
   return parts.join(mac ? '' : ' + ')
 }
 

@@ -29,6 +29,18 @@ test('macOS: Liquid Glass, Classic and Solid follow the app theme', async () => 
       w.show()
       w.focus()
     })
+    // A colourful "desktop" right behind the app, so the screenshots show what shines through the glass.
+    await l.app.evaluate(({ BrowserWindow }) => {
+      const main = BrowserWindow.getAllWindows().find((x) => x.getTitle() === 'VoiceFlow AI')!
+      const [x, y] = main.getPosition()
+      const back = new BrowserWindow({ x: x - 60, y: y - 40, width: 1400, height: 880, frame: false, focusable: false, show: false, title: 'backdrop' })
+      const html = `<body style="margin:0;height:100vh;background:linear-gradient(135deg,#ff6b6b 0%,#ffd93d 30%,#6bcb77 60%,#4d96ff 100%)"><div style="position:absolute;left:180px;top:120px;width:360px;height:360px;border-radius:50%;background:#7b2ff7"></div><div style="position:absolute;right:220px;bottom:90px;width:420px;height:220px;border-radius:40px;background:#00c2a8"></div></body>`
+      void back.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html))
+      back.showInactive()
+      main.moveTop()
+      main.focus()
+    })
+    await p.waitForTimeout(800)
     await p.getByRole('button', { name: 'Settings', exact: true }).first().click()
     await p.getByRole('button', { name: 'Appearance', exact: true }).first().click()
     for (const theme of ['light', 'dark'] as const) {
