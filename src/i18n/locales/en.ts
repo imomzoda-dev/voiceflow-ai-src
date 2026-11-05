@@ -449,8 +449,8 @@ const en = {
       material_liquid: 'Liquid Glass',
       material_vibrancy: 'Classic',
       material_solid: 'Solid',
-      material_liquid_hint: 'Clear glass, as in macOS 26: the desktop shows softly through the window.',
-      material_vibrancy_hint: 'A translucent sidebar on a solid page.',
+      material_liquid_hint: 'Clear glass, as in macOS 26.',
+      material_vibrancy_hint: 'Translucent sidebar.',
       material_solid_hint: 'No transparency.'
     },
     voice: {

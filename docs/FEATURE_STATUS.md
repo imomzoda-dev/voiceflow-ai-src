@@ -1,4 +1,4 @@
-# Feature status — VoiceFlow AI 1.0.5
+# Feature status — VoiceFlow AI 1.0.6
 
 Checked on **Windows 11 x64** (Electron 45.2, Node 24) on 2026-11-04. **Nothing has been run on macOS yet.**
 
@@ -73,6 +73,15 @@ What the unit tests cover:
 | Text always left on the clipboard (also when pasting fails) | ✅ Unit tests |
 | whisper-server engine (model stays loaded, prewarmed while choosing) | ✅ Real runs: ready in ≈0.5 s, ≈1.8 s per phrase with the Base model on CPU |
 | Installer shows "Update x → y" over an installed version | ✅ Seen on this PC: "Обновление VoiceFlow AI — Версия 0.1.0 → 1.0.1" with «Обновить» (closed without installing) |
+
+## 1.0.6 — macOS
+
+| Feature / fix | Status |
+|---|---|
+| Fixed: dark sidebar in light mode on macOS — the native material followed the Mac's appearance, not the app's theme. `nativeTheme.themeSource` now follows the app's theme | ✅ macOS CI test: in light and dark × 3 materials, `nativeTheme` equals the app theme; window screenshots show a light sidebar in light mode |
+| Liquid Glass window (default on macOS), Classic and Solid — *Settings → Appearance → Window* | ✅ Rendered on the macOS CI runner in both themes · 🟡 the see-through effect itself is not visible on the CI virtual machine (it draws native transparency solid); to be judged on a real Mac |
+| Fixed: ← → did not change the language in the picker on macOS — key presses with Right Option (the Mac dictation key) held were ignored; Option+arrows now also stay out of the focused app, and the keys also arrive through globalShortcut (de-duplicated) | ✅ Unit tests · 🟡 on a real Mac by hand |
+| Mac key symbols in shortcut labels ("Right ⌥") | ✅ Unit test |
 
 ## 1.0.5
 

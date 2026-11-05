@@ -451,8 +451,8 @@ const ru: Locale = {
       material_liquid: 'Liquid Glass',
       material_vibrancy: 'Классика',
       material_solid: 'Сплошное',
-      material_liquid_hint: 'Прозрачное стекло, как в macOS 26: рабочий стол мягко просвечивает сквозь окно.',
-      material_vibrancy_hint: 'Полупрозрачная боковая панель на сплошной странице.',
+      material_liquid_hint: 'Прозрачное стекло, как в macOS 26.',
+      material_vibrancy_hint: 'Полупрозрачная боковая панель.',
       material_solid_hint: 'Без прозрачности.'
     },
     voice: {

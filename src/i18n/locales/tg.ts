@@ -451,8 +451,8 @@ const tg: Locale = {
       material_liquid: 'Liquid Glass',
       material_vibrancy: 'Классикӣ',
       material_solid: 'Яклухт',
-      material_liquid_hint: 'Шишаи шаффоф, мисли macOS 26: мизи корӣ аз равзана нарм намоён аст.',
-      material_vibrancy_hint: 'Панели паҳлӯи нимшаффоф дар саҳифаи яклухт.',
+      material_liquid_hint: 'Шишаи шаффоф, мисли macOS 26.',
+      material_vibrancy_hint: 'Панели паҳлӯи нимшаффоф.',
       material_solid_hint: 'Бе шаффофият.'
     },
     voice: {
