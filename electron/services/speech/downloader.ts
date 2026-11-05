@@ -42,29 +42,65 @@ export async function fetchHuggingFaceChecksum(url: string, fetchImpl: typeof fe
   }
 }
 
+/** Attempts after a dropped connection or a stall; each resumes from the bytes already received. */
+const MAX_ATTEMPTS = 10
+/** No data for this long counts as a stalled connection. */
+const STALL_MS = 30_000
+
+/**
+ * Downloads to `<dest>.part`, then verifies and renames. A dropped or stalled connection (common
+ * with large models on slow networks) does not restart the download: it resumes with an HTTP
+ * Range request from the bytes already written, hashing the stream in order across attempts.
+ */
 export async function downloadFile(o: DownloadOptions): Promise<DownloadResult> {
   const f = o.fetchImpl ?? fetch
-  const res = await f(o.url, { signal: o.signal, redirect: 'follow' })
-  if (!res.ok || !res.body) throw new Error(`Download failed: HTTP ${res.status}`)
-  const total = Number(res.headers.get('content-length') ?? '') || o.expectedSize || null
   const part = `${o.dest}.part`
-  const hash = createHash('sha256')
+  let hash = createHash('sha256')
   let received = 0
+  let total: number | null = o.expectedSize ?? null
   let lastEmit = 0
-  const meter = new Transform({
-    transform(chunk: Buffer, _enc, cb) {
-      hash.update(chunk)
-      received += chunk.length
-      const now = Date.now()
-      if (now - lastEmit > 150) {
-        lastEmit = now
-        o.onProgress?.(received, total)
-      }
-      cb(null, chunk)
-    }
-  })
   try {
-    await pipeline(Readable.fromWeb(res.body as import('node:stream/web').ReadableStream), meter, createWriteStream(part), { signal: o.signal })
+    for (let attempt = 1; ; attempt++) {
+      const stall = new AbortController()
+      const signal = AbortSignal.any([o.signal, stall.signal])
+      let lastData = Date.now()
+      const watchdog = setInterval(() => {
+        if (Date.now() - lastData > STALL_MS) stall.abort()
+      }, 1000)
+      try {
+        const res = await f(o.url, { signal, redirect: 'follow', headers: received ? { Range: `bytes=${received}-` } : undefined })
+        if (!res.ok || !res.body) throw Object.assign(new Error(`Download failed: HTTP ${res.status}`), { fatal: res.status >= 400 && res.status < 500 })
+        if (received && res.status !== 206) {
+          // The server ignored the range: start over.
+          received = 0
+          hash = createHash('sha256')
+        }
+        const length = Number(res.headers.get('content-length') ?? '') || null
+        const range = /\/(\d+)$/.exec(res.headers.get('content-range') ?? '')
+        total = (range ? Number(range[1]) : length && !received ? length : null) ?? total
+        const out = createWriteStream(part, { flags: received ? 'a' : 'w' })
+        const meter = new Transform({
+          transform(chunk: Buffer, _enc, cb) {
+            lastData = Date.now()
+            hash.update(chunk)
+            received += chunk.length
+            const now = Date.now()
+            if (now - lastEmit > 150) {
+              lastEmit = now
+              o.onProgress?.(received, total)
+            }
+            cb(null, chunk)
+          }
+        })
+        await pipeline(Readable.fromWeb(res.body as import('node:stream/web').ReadableStream), meter, out, { signal })
+        break
+      } catch (e) {
+        if (o.signal.aborted || (e as { fatal?: boolean }).fatal || attempt >= MAX_ATTEMPTS) throw e
+        await new Promise((r) => setTimeout(r, Math.min(10_000, 1000 * attempt)))
+      } finally {
+        clearInterval(watchdog)
+      }
+    }
   } catch (e) {
     await rm(part, { force: true }).catch(() => undefined)
     throw e

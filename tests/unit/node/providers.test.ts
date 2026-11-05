@@ -126,4 +126,31 @@ describe('model downloader', () => {
     expect(existsSync(dest)).toBe(false)
     expect(existsSync(`${dest}.part`)).toBe(false)
   })
+  it('resumes with a Range request after the connection drops, and still verifies the whole file', async () => {
+    const dest = join(mkdtempSync(join(tmpdir(), 'vf-dl-')), 'm.bin')
+    const ranges: (string | null)[] = []
+    let calls = 0
+    const flaky = (async (_u: string, init?: RequestInit) => {
+      const range = (init?.headers as Record<string, string> | undefined)?.Range ?? null
+      ranges.push(range)
+      calls++
+      if (calls === 1) {
+        // First attempt: half the file, then the connection breaks.
+        const half = body.subarray(0, Math.floor(body.length / 2))
+        const stream = new ReadableStream({
+          start(c) {
+            c.enqueue(new Uint8Array(half))
+            setTimeout(() => c.error(new TypeError('terminated')), 20)
+          }
+        })
+        return new Response(stream, { status: 200, headers: { 'content-length': String(body.length) } })
+      }
+      const from = Number(/bytes=(\d+)-/.exec(range ?? '')![1])
+      return new Response(new Uint8Array(body.subarray(from)), { status: 206, headers: { 'content-range': `bytes ${from}-${body.length - 1}/${body.length}` } })
+    }) as unknown as typeof fetch
+    const r = await downloadFile({ url: 'https://x/m.bin', dest, signal: new AbortController().signal, expectedSha256: sha, fetchImpl: flaky })
+    expect(r).toMatchObject({ sha256: sha, size: body.length, verified: true })
+    expect(ranges).toEqual([null, `bytes=${Math.floor(body.length / 2)}-`])
+    expect(readFileSync(dest).equals(body)).toBe(true)
+  })
 })

@@ -1,7 +1,7 @@
 {
   "name": "voiceflow-ai",
   "productName": "VoiceFlow AI",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "VoiceFlow AI — voice typing in any app and an AI document workspace for Windows and macOS. Tajik, Russian, English and more.",
   "main": "out/main/index.js",
   "author": "Imomzoda Mehriddin",

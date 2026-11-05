@@ -1,4 +1,4 @@
-# Feature status — VoiceFlow AI 1.0.3
+# Feature status — VoiceFlow AI 1.0.4
 
 Checked on **Windows 11 x64** (Electron 45.2, Node 24) on 2026-11-04. **Nothing has been run on macOS yet.**
 
@@ -73,6 +73,12 @@ What the unit tests cover:
 | Text always left on the clipboard (also when pasting fails) | ✅ Unit tests |
 | whisper-server engine (model stays loaded, prewarmed while choosing) | ✅ Real runs: ready in ≈0.5 s, ≈1.8 s per phrase with the Base model on CPU |
 | Installer shows "Update x → y" over an installed version | ✅ Seen on this PC: "Обновление VoiceFlow AI — Версия 0.1.0 → 1.0.1" with «Обновить» (closed without installing) |
+
+## 1.0.4
+
+| Fix | Status |
+|---|---|
+| Model downloads resume after a dropped or stalled connection (HTTP Range, up to 10 attempts, 30 s stall detection); SHA-256 still checked over the whole file | ✅ Unit test with a connection that breaks halfway; found while verifying the hosted Persian model (the connection dropped after 136 of 574 MB) |
 
 ## 1.0.3 — languages and alphabets
 
