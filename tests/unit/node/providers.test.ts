@@ -150,7 +150,11 @@ describe('model downloader', () => {
     }) as unknown as typeof fetch
     const r = await downloadFile({ url: 'https://x/m.bin', dest, signal: new AbortController().signal, expectedSha256: sha, fetchImpl: flaky })
     expect(r).toMatchObject({ sha256: sha, size: body.length, verified: true })
-    expect(ranges).toEqual([null, `bytes=${Math.floor(body.length / 2)}-`])
+    // Resumes from the bytes that really reached the disk (at most the half that was sent).
+    expect(ranges[0]).toBeNull()
+    const resumedAt = Number(/bytes=(\d+)-/.exec(ranges[1] ?? '')?.[1])
+    expect(resumedAt).toBeLessThanOrEqual(Math.floor(body.length / 2))
+    expect(ranges).toHaveLength(2)
     expect(readFileSync(dest).equals(body)).toBe(true)
   })
 })

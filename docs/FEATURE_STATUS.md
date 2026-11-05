@@ -79,6 +79,7 @@ What the unit tests cover:
 | Fix | Status |
 |---|---|
 | Fixed: after a few dictations every one failed with "Something went wrong" — a disk cleaner deleted the app's folder in %TEMP% while it ran (`ENOENT … .wav`). Working files now live in the app's own data folder, the folder is recreated before every write, and leftovers older than a day are removed at start | ✅ Unit test that deletes the folder mid-run (fails without the fix with the same ENOENT); real-speech E2E (ru, tg) |
+| Download check hardened: the SHA-256 is computed from the finished file on disk, and a resumed download continues from the file's real size (bytes buffered when a connection dropped could be lost, and the stream checksum did not see it — caught by the Windows CI run) | ✅ Unit tests |
 
 ## 1.0.4
 

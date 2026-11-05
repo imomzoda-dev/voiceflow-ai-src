@@ -2,8 +2,8 @@
  * Streaming HTTPS downloader with progress, cancellation, SHA-256 verification and
  * atomic rename (`.part` → final). TLS verification is always on (Node defaults).
  */
-import { createWriteStream } from 'node:fs'
-import { mkdir, rename, rm } from 'node:fs/promises'
+import { createReadStream, createWriteStream, type WriteStream } from 'node:fs'
+import { mkdir, rename, rm, stat } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { createHash } from 'node:crypto'
 import { Readable } from 'node:stream'
@@ -57,7 +57,6 @@ export async function downloadFile(o: DownloadOptions): Promise<DownloadResult> 
   const f = o.fetchImpl ?? fetch
   const part = `${o.dest}.part`
   await mkdir(dirname(o.dest), { recursive: true })
-  let hash = createHash('sha256')
   let received = 0
   let total: number | null = o.expectedSize ?? null
   let lastEmit = 0
@@ -69,35 +68,38 @@ export async function downloadFile(o: DownloadOptions): Promise<DownloadResult> 
       const watchdog = setInterval(() => {
         if (Date.now() - lastData > STALL_MS) stall.abort()
       }, 1000)
+      let out: WriteStream | null = null
       try {
         const res = await f(o.url, { signal, redirect: 'follow', headers: received ? { Range: `bytes=${received}-` } : undefined })
         if (!res.ok || !res.body) throw Object.assign(new Error(`Download failed: HTTP ${res.status}`), { fatal: res.status >= 400 && res.status < 500 })
-        if (received && res.status !== 206) {
-          // The server ignored the range: start over.
-          received = 0
-          hash = createHash('sha256')
-        }
+        // The server ignored the range: start over.
+        if (received && res.status !== 206) received = 0
         const length = Number(res.headers.get('content-length') ?? '') || null
         const range = /\/(\d+)$/.exec(res.headers.get('content-range') ?? '')
         total = (range ? Number(range[1]) : length && !received ? length : null) ?? total
-        const out = createWriteStream(part, { flags: received ? 'a' : 'w' })
+        out = createWriteStream(part, { flags: received ? 'a' : 'w' })
+        let counted = received
         const meter = new Transform({
           transform(chunk: Buffer, _enc, cb) {
             lastData = Date.now()
-            hash.update(chunk)
-            received += chunk.length
+            counted += chunk.length
             const now = Date.now()
             if (now - lastEmit > 150) {
               lastEmit = now
-              o.onProgress?.(received, total)
+              o.onProgress?.(counted, total)
             }
             cb(null, chunk)
           }
         })
         await pipeline(Readable.fromWeb(res.body as import('node:stream/web').ReadableStream), meter, out, { signal })
+        received = await sizeOf(part)
         break
       } catch (e) {
         if (o.signal.aborted || (e as { fatal?: boolean }).fatal || attempt >= MAX_ATTEMPTS) throw e
+        // Resume from what is really on disk: when a write stream is torn down, bytes it had
+        // buffered are dropped, so the count of bytes received can be ahead of the file.
+        if (out) await closed(out)
+        received = await sizeOf(part)
         await new Promise((r) => setTimeout(r, Math.min(10_000, 1000 * attempt)))
       } finally {
         clearInterval(watchdog)
@@ -108,15 +110,34 @@ export async function downloadFile(o: DownloadOptions): Promise<DownloadResult> 
     throw e
   }
   o.onProgress?.(received, total)
-  const sha256 = hash.digest('hex')
   if (o.expectedSize && received !== o.expectedSize) {
     await rm(part, { force: true })
     throw new Error(`Size mismatch (expected ${o.expectedSize}, got ${received})`)
   }
+  // The checksum is computed from the finished file on disk, not from the network stream:
+  // it proves the file that will be used is intact, however many times the download resumed.
+  const sha256 = await sha256Of(part)
   if (o.expectedSha256 && sha256 !== o.expectedSha256.toLowerCase()) {
     await rm(part, { force: true })
     throw new Error('Checksum mismatch: the downloaded file is corrupt or was tampered with')
   }
   await rename(part, o.dest)
   return { sha256, size: received, verified: Boolean(o.expectedSha256) }
+}
+
+async function sizeOf(path: string): Promise<number> {
+  return stat(path).then(
+    (s) => s.size,
+    () => 0
+  )
+}
+
+function closed(stream: WriteStream): Promise<void> {
+  return stream.closed ? Promise.resolve() : new Promise((r) => stream.once('close', () => r()))
+}
+
+async function sha256Of(path: string): Promise<string> {
+  const h = createHash('sha256')
+  for await (const chunk of createReadStream(path)) h.update(chunk as Buffer)
+  return h.digest('hex')
 }
