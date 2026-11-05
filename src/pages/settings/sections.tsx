@@ -83,6 +83,15 @@ export function AppearanceSection() {
       <Field inline icon={<IconTile icon={Sparkles} color="purple" />} label={t('settings.appearance.motion')}>
         <Segmented value={a.motion} onChange={(v) => void update('appearance', { motion: v })} options={[{ value: 'system', label: t('settings.appearance.motionSystem') }, { value: 'full', label: t('settings.appearance.motionFull') }, { value: 'reduced', label: t('settings.appearance.motionReduced') }]} />
       </Field>
+      {navigator.userAgent.includes('Mac') && (
+        <Field inline icon={<IconTile icon={AppWindow} color="teal" />} label={t('settings.appearance.material')} hint={t(`settings.appearance.material_${a.windowMaterial}_hint`)}>
+          <Segmented
+            value={a.windowMaterial}
+            onChange={(v) => void update('appearance', { windowMaterial: v })}
+            options={(['liquid', 'vibrancy', 'solid'] as const).map((v) => ({ value: v, label: t(`settings.appearance.material_${v}`) }))}
+          />
+        </Field>
+      )}
     </Group>
   )
 }

@@ -158,6 +158,65 @@
   --sidebar: transparent;
 }
 
+/* ───────────── macOS Liquid Glass (Settings → Appearance → Window) ─────────────
+   The window has the clear "fullscreen-ui" material behind it (window-manager.ts). The page and the
+   sidebar are thin glass over it, cards and groups are glass panes with a bright specular top edge,
+   so the desktop shows through softly everywhere — the macOS 26 look. The native material follows
+   the app's theme (nativeTheme.themeSource), so light stays light. */
+:root.platform-mac.mat-liquid {
+  --bg: rgba(242, 242, 247, 0.46);
+  --surface: rgba(255, 255, 255, 0.62);
+  --surface-2: rgba(242, 242, 247, 0.58);
+  --surface-3: rgba(229, 229, 234, 0.7);
+  --bg-elevated: rgba(255, 255, 255, 0.86);
+  --chrome: rgba(255, 255, 255, 0.5);
+  --sidebar: rgba(255, 255, 255, 0.18);
+  --page: rgba(255, 255, 255, 0.93);
+  --fill: rgba(120, 120, 128, 0.14);
+  --border: rgba(60, 60, 67, 0.12);
+  --fg-muted: rgba(40, 40, 46, 0.72);
+  --fg-subtle: rgba(40, 40, 46, 0.48);
+  --shadow-sm:
+    inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -0.5px 0 rgba(255, 255, 255, 0.35),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.55), 0 8px 24px -14px rgba(20, 20, 40, 0.28);
+}
+:root.platform-mac.mat-liquid.dark {
+  --bg: rgba(18, 18, 20, 0.5);
+  --surface: rgba(44, 44, 48, 0.56);
+  --surface-2: rgba(58, 58, 62, 0.5);
+  --surface-3: rgba(72, 72, 76, 0.6);
+  --bg-elevated: rgba(36, 36, 40, 0.88);
+  --chrome: rgba(30, 30, 34, 0.5);
+  --sidebar: rgba(30, 30, 34, 0.22);
+  --page: rgba(28, 28, 30, 0.94);
+  --border: rgba(255, 255, 255, 0.1);
+  --fg-muted: rgba(235, 235, 245, 0.74);
+  --fg-subtle: rgba(235, 235, 245, 0.46);
+  --shadow-sm:
+    inset 0 1px 0 rgba(255, 255, 255, 0.13), inset 0 -0.5px 0 rgba(255, 255, 255, 0.03),
+    inset 0 0 0 0.5px rgba(255, 255, 255, 0.06), 0 10px 28px -14px rgba(0, 0, 0, 0.7);
+}
+/* Glass panes keep the desktop softly visible but never blurred into the text. */
+:root.platform-mac.mat-liquid .vf-group,
+:root.platform-mac.mat-liquid .bg-surface {
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+}
+/* A soft light falls from the top of the glass, as on macOS 26. */
+:root.platform-mac.mat-liquid main {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.22) 0%, transparent 160px);
+}
+:root.platform-mac.mat-liquid.dark main {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.05) 0%, transparent 160px);
+}
+/* The sidebar is a pane of its own: a bright edge instead of a grey separator. */
+:root.platform-mac.mat-liquid [data-sidebar] {
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.6);
+}
+:root.platform-mac.mat-liquid.dark [data-sidebar] {
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, 0.07);
+}
+
 @theme inline {
   /* SF Pro on Apple platforms, Inter elsewhere. */
   --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Inter Variable', 'Segoe UI Variable Text', 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;

@@ -446,7 +446,14 @@ const tg: Locale = {
       motion: 'Аниматсияҳо',
       motionSystem: 'Мисли система',
       motionFull: 'Пурра',
-      motionReduced: 'Камтарин'
+      motionReduced: 'Камтарин',
+      material: 'Равзана (macOS)',
+      material_liquid: 'Liquid Glass',
+      material_vibrancy: 'Классикӣ',
+      material_solid: 'Яклухт',
+      material_liquid_hint: 'Шишаи шаффоф, мисли macOS 26: мизи корӣ аз равзана нарм намоён аст.',
+      material_vibrancy_hint: 'Панели паҳлӯи нимшаффоф дар саҳифаи яклухт.',
+      material_solid_hint: 'Бе шаффофият.'
     },
     voice: {
       microphone: 'Микрофон',

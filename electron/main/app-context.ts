@@ -2,7 +2,7 @@
  * Composition root: constructs every main-process service once and wires them together.
  * IPC modules receive this context; nothing else holds global state.
  */
-import { app, BrowserWindow, Notification, safeStorage, systemPreferences } from 'electron'
+import { app, BrowserWindow, nativeTheme, Notification, safeStorage, systemPreferences } from 'electron'
 import { existsSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { openDatabase, runMigrations, type DatabaseHandle } from '../db/client'
@@ -30,7 +30,7 @@ import { buildAppMenu } from './app-menu'
 import { UpdaterService } from '../services/updates/updater-service'
 import { join } from 'node:path'
 import { appPaths, type AppPaths } from './paths'
-import { createMainWindow, createOverlayWindow, positionOverlay } from './window-manager'
+import { applyWindowMaterial, createMainWindow, createOverlayWindow, positionOverlay } from './window-manager'
 import { EVT } from '../../shared/channels'
 import { MAIN_STRINGS } from '../../shared/main-strings'
 import type { AppSettings, ProcessingMode } from '../../shared/settings'
@@ -170,6 +170,8 @@ export class AppContext {
       this.broadcast(EVT.settings, s)
       if (s.voice !== prev.voice) this.hotkeys.apply(s)
       if (s.general.launchAtLogin !== prev.general.launchAtLogin) this.applyLoginItem(s)
+      if (s.appearance.theme !== prev.appearance.theme) nativeTheme.themeSource = s.appearance.theme
+      if (s.appearance.windowMaterial !== prev.appearance.windowMaterial && this.mainWindow) applyWindowMaterial(this.mainWindow, s.appearance.windowMaterial)
       this.refreshTray()
       buildAppMenu(this)
     })
@@ -190,7 +192,9 @@ export class AppContext {
   /* --------------------------------- windows --------------------------------- */
 
   createWindows(showMain: boolean) {
-    this.mainWindow = createMainWindow({ show: showMain })
+    // Native materials, menus and dialogs follow the app's theme, not only the system's.
+    nativeTheme.themeSource = this.settings.get().appearance.theme
+    this.mainWindow = createMainWindow({ show: showMain, material: this.settings.get().appearance.windowMaterial })
     this.mainWindow.on('close', (e) => {
       if (this.quitting) return
       if (this.settings.get().general.closeBehavior === 'tray' || process.platform === 'darwin') {
@@ -231,7 +235,7 @@ export class AppContext {
   }
 
   showMain(page?: string) {
-    if (!this.mainWindow || this.mainWindow.isDestroyed()) this.mainWindow = createMainWindow({ show: true })
+    if (!this.mainWindow || this.mainWindow.isDestroyed()) this.mainWindow = createMainWindow({ show: true, material: this.settings.get().appearance.windowMaterial })
     if (this.mainWindow.isMinimized()) this.mainWindow.restore()
     this.mainWindow.show()
     this.mainWindow.focus()

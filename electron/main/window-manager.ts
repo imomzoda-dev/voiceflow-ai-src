@@ -70,7 +70,26 @@ async function load(win: BrowserWindow, page: 'index' | 'overlay', hash?: string
   else await win.loadFile(target.file!, hash ? { hash } : undefined)
 }
 
-export function createMainWindow(opts: { show: boolean }): BrowserWindow {
+type WindowMaterial = 'liquid' | 'vibrancy' | 'solid'
+
+/**
+ * macOS material behind the page. Liquid Glass: the clear, bright full-window material the
+ * translucent page floats on (globals.css, .mat-liquid). Vibrancy: the classic sidebar material
+ * behind a transparent sidebar. Solid: none. The material follows nativeTheme.themeSource, which
+ * the app keeps equal to its own theme, so a light app never gets a dark sidebar.
+ */
+export function macVibrancy(m: WindowMaterial): 'fullscreen-ui' | 'sidebar' | null {
+  return m === 'liquid' ? 'fullscreen-ui' : m === 'vibrancy' ? 'sidebar' : null
+}
+
+export function applyWindowMaterial(win: BrowserWindow, m: WindowMaterial) {
+  if (process.platform !== 'darwin' || win.isDestroyed()) return
+  win.setVibrancy(macVibrancy(m), { animationDuration: 200 })
+  win.setBackgroundColor(m === 'solid' ? (nativeTheme.shouldUseDarkColors ? '#000000' : '#f2f2f7') : '#00000000')
+}
+
+export function createMainWindow(opts: { show: boolean; material?: WindowMaterial }): BrowserWindow {
+  const material = opts.material ?? 'liquid'
   const win = new BrowserWindow({
     width: 1320,
     height: 860,
@@ -78,9 +97,9 @@ export function createMainWindow(opts: { show: boolean }): BrowserWindow {
     minHeight: 600,
     show: false,
     title: 'VoiceFlow AI',
-    // macOS: native translucent sidebar (NSVisualEffectView) behind the transparent web sidebar.
-    ...(process.platform === 'darwin'
-      ? { vibrancy: 'sidebar' as const, visualEffectState: 'followWindow' as const, backgroundColor: '#00000000' }
+    // macOS: a native material (NSVisualEffectView) behind the translucent page — see macVibrancy().
+    ...(process.platform === 'darwin' && macVibrancy(material)
+      ? { vibrancy: macVibrancy(material)!, visualEffectState: 'followWindow' as const, backgroundColor: '#00000000' }
       : { backgroundColor: nativeTheme.shouldUseDarkColors ? '#000000' : '#f2f2f7' }),
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 18, y: 18 },

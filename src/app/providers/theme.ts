@@ -15,8 +15,11 @@ export function applyTheme(a: AppSettings['appearance']) {
   const root = document.documentElement
   const isMac = navigator.userAgent.includes('Mac')
   root.classList.toggle('platform-mac', isMac)
-  // The main window uses native sidebar vibrancy on macOS (see window-manager.ts); the overlay does not.
-  root.classList.toggle('vibrancy', isMac && !document.body.classList.contains('overlay-body'))
+  // The main window has a native material behind it on macOS (window-manager.ts macVibrancy); the overlay does not.
+  const material = a.windowMaterial ?? 'liquid'
+  const main = isMac && !document.body.classList.contains('overlay-body')
+  root.classList.toggle('vibrancy', main && material !== 'solid')
+  root.classList.toggle('mat-liquid', main && material === 'liquid')
   root.classList.toggle('dark', resolveDark(a.theme))
   root.dataset.accent = a.accent
   root.dataset.density = a.compact ? 'compact' : 'normal'

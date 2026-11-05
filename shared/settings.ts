@@ -30,7 +30,9 @@ export const appearanceSchema = z.object({
   theme: z.enum(['light', 'dark', 'system']),
   accent: z.enum(['blue', 'violet', 'pink', 'orange', 'green', 'graphite']),
   compact: z.boolean(),
-  motion: z.enum(['system', 'full', 'reduced'])
+  motion: z.enum(['system', 'full', 'reduced']),
+  /** macOS window material: Liquid Glass (clear glass, macOS 26 style), the classic translucent sidebar, or solid. */
+  windowMaterial: z.enum(['liquid', 'vibrancy', 'solid'])
 })
 
 export const voiceSchema = z.object({
@@ -155,7 +157,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     notifications: true,
     onboardingCompleted: false
   },
-  appearance: { theme: 'system', accent: 'blue', compact: false, motion: 'system' },
+  appearance: { theme: 'system', accent: 'blue', compact: false, motion: 'system', windowMaterial: 'liquid' },
   voice: {
     microphoneId: null,
     inputGain: 1,

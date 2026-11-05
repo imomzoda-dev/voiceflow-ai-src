@@ -54,6 +54,7 @@ export function Sidebar() {
 
   return (
     <motion.aside
+      data-sidebar
       animate={{ width: collapsed ? 68 : 240 }}
       transition={{ type: 'spring', stiffness: 420, damping: 40 }}
       className="drag-region relative flex h-full shrink-0 flex-col bg-[var(--sidebar)] shadow-[inset_-0.5px_0_0_var(--border-strong)] backdrop-blur-2xl"

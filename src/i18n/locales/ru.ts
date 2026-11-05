@@ -446,7 +446,14 @@ const ru: Locale = {
       motion: 'Анимации',
       motionSystem: 'Как в системе',
       motionFull: 'Полные',
-      motionReduced: 'Минимальные'
+      motionReduced: 'Минимальные',
+      material: 'Окно (macOS)',
+      material_liquid: 'Liquid Glass',
+      material_vibrancy: 'Классика',
+      material_solid: 'Сплошное',
+      material_liquid_hint: 'Прозрачное стекло, как в macOS 26: рабочий стол мягко просвечивает сквозь окно.',
+      material_vibrancy_hint: 'Полупрозрачная боковая панель на сплошной странице.',
+      material_solid_hint: 'Без прозрачности.'
     },
     voice: {
       microphone: 'Микрофон',

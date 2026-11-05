@@ -14,6 +14,17 @@ import { createLogger } from './logger'
 const log = createLogger('hotkeys')
 const noop = () => {}
 
+type PickerInput = { kind: 'move'; delta: -1 | 1 } | { kind: 'confirm' } | { kind: 'index'; index: number }
+
+/** libuiohook key codes (the same on Windows and macOS): arrows, Enter / numpad Enter, 1-3. */
+export function pickerKey(keycode: number): PickerInput | null {
+  if (keycode === 57419) return { kind: 'move', delta: -1 }
+  if (keycode === 57421) return { kind: 'move', delta: 1 }
+  if (keycode === 28 || keycode === 3612) return { kind: 'confirm' }
+  if (keycode >= 2 && keycode <= 4) return { kind: 'index', index: keycode - 2 }
+  return null
+}
+
 export class HotkeyManager extends EventEmitter {
   readonly matcher = new HotkeyMatcher()
   private registered = new Map<HotkeyAction, string>()
@@ -22,21 +33,54 @@ export class HotkeyManager extends EventEmitter {
   private suppress = true
   private cancelArmed = false
   private pickerActive = false
-  private static readonly PICKER_KEYS = ['Left', 'Right', 'Enter', '1', '2', '3']
+  /** Picker keys, also with Option/Alt: on macOS the dictation key is Right Option, which may still be held. */
+  private static readonly PICKER_KEYS: [string, PickerInput][] = [
+    ['Left', { kind: 'move', delta: -1 }],
+    ['Right', { kind: 'move', delta: 1 }],
+    ['Alt+Left', { kind: 'move', delta: -1 }],
+    ['Alt+Right', { kind: 'move', delta: 1 }],
+    ['Enter', { kind: 'confirm' }],
+    ['Alt+Enter', { kind: 'confirm' }],
+    ['1', { kind: 'index', index: 0 }],
+    ['2', { kind: 'index', index: 1 }],
+    ['3', { kind: 'index', index: 2 }]
+  ]
+  /** The same key press can arrive twice (native hook + globalShortcut): the second one is dropped. */
+  private lastPicker = new Map<string, { at: number; source: 'hook' | 'shortcut' }>()
 
-  /** While the picker is open, its keys are kept from reaching the focused app. */
+  /**
+   * While the picker is open its keys are kept from reaching the focused app, and they also come in
+   * through globalShortcut: on macOS a key taken by a global shortcut may not reach the keyboard hook.
+   */
   setPicker(active: boolean) {
     if (this.pickerActive === active) return
     this.pickerActive = active
-    for (const acc of HotkeyManager.PICKER_KEYS) {
+    this.lastPicker.clear()
+    for (const [acc, input] of HotkeyManager.PICKER_KEYS) {
       try {
         if (active) {
-          if (!globalShortcut.isRegistered(acc)) globalShortcut.register(acc, noop)
+          if (!globalShortcut.isRegistered(acc)) globalShortcut.register(acc, () => this.pickerInput(input, 'shortcut'))
         } else globalShortcut.unregister(acc)
       } catch {
         /* ignore */
       }
     }
+  }
+
+  private pickerInput(input: PickerInput, source: 'hook' | 'shortcut') {
+    if (!this.pickerActive) return
+    const key = input.kind === 'move' ? `move${input.delta}` : input.kind === 'index' ? `index${input.index}` : 'confirm'
+    const now = Date.now()
+    const last = this.lastPicker.get(key)
+    // One physical press seen by both paths: keep the first, drop the other one within 150 ms.
+    if (last && last.source !== source && now - last.at < 150) {
+      this.lastPicker.delete(key)
+      return
+    }
+    this.lastPicker.set(key, { at: now, source })
+    if (input.kind === 'move') this.emit('pick', input.delta)
+    else if (input.kind === 'confirm') this.emit('pickConfirm')
+    else this.emit('pickIndex', input.index)
   }
 
   constructor(
@@ -46,11 +90,13 @@ export class HotkeyManager extends EventEmitter {
     super()
     bridge.on('key', (e) => {
       // Language picker: <- -> move, Enter confirms, 1-3 choose directly (only while the picker is open).
-      if (this.pickerActive && e.type === 'down' && !e.ctrl && !e.alt && !e.meta) {
-        if (e.keycode === 57419) return void this.emit('pick', -1)
-        if (e.keycode === 57421) return void this.emit('pick', 1)
-        if (e.keycode === 28 || e.keycode === 3612) return void this.emit('pickConfirm')
-        if (e.keycode >= 2 && e.keycode <= 4) return void this.emit('pickIndex', e.keycode - 2)
+      // Modifiers are allowed: on macOS the dictation key (Right Option) can still be held down.
+      if (this.pickerActive && (e.type === 'down' || e.type === 'up')) {
+        const input = pickerKey(e.keycode)
+        if (input) {
+          if (e.type === 'down') this.pickerInput(input, 'hook')
+          return
+        }
       }
       this.matcher.handle(e)
     })

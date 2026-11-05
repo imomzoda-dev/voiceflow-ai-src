@@ -91,6 +91,18 @@ jobs:
       - name: Packaged app test
         run: npx playwright test tests/e2e/packaged.spec.ts
 
+      # Window materials in light and dark: the native material must follow the app's theme.
+      - name: macOS window materials (Liquid Glass) test
+        run: npx playwright test tests/e2e/mac-glass.spec.ts
+
+      - name: Upload window screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mac-glass-screenshots
+          if-no-files-found: ignore
+          path: test-results/
+
       - name: Upload installers
         uses: actions/upload-artifact@v4
         with:
