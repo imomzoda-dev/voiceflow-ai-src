@@ -13,7 +13,7 @@
  */
 import { EventEmitter } from 'node:events'
 import { randomUUID } from 'node:crypto'
-import { writeFile, rm, rename } from 'node:fs/promises'
+import { writeFile, rm, rename, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { AppSettings } from '../../shared/settings'
 import type { DictationErrorCode, DictationResult, DictationState, DictationTarget, ProcessingMode, VoiceCommandPayload } from '../../shared/types'
@@ -446,6 +446,8 @@ export class DictationService extends EventEmitter {
     const wavPath = join(this.d.dirs.temp, `${sess.id}-${meta.index}.wav`)
     let kept = false
     try {
+      // Recreated on every phrase: the folder may have been removed while the app runs.
+      await mkdir(this.d.dirs.temp, { recursive: true })
       await writeFile(wavPath, wav)
       const dictionary = await this.d.dictionary()
       const rec = s.recognition
@@ -545,6 +547,7 @@ export class DictationService extends EventEmitter {
       this.set({ liveText: all.length > 140 ? `…${all.slice(-140)}` : all })
       if (s.storage.saveAudio) {
         const dest = join(this.d.dirs.audio, `${sess.id}-${meta.index}.wav`)
+        await mkdir(this.d.dirs.audio, { recursive: true }).catch(() => undefined)
         await rename(wavPath, dest).then(
           () => {
             kept = true

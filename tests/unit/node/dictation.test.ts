@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mkdtempSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DictationService, type DictationDeps } from '../../../electron/services/dictation-service'
@@ -330,5 +330,15 @@ describe('DictationService', () => {
     await svc.receiveAudio(id, wav(), { durationMs: 1000, peak: 0.4, rms: 0.2, index: 1, final: true })
     const typed = output.insertExternal.mock.calls.map((c) => c[0])
     expect(typed).toEqual(['Номи ман меҳридин аст', ' дар донишгоҳ мехонам', '.'])
+  })
+
+  it('keeps working when the temp folder is deleted while the app runs (disk cleaners)', async () => {
+    const { svc, recorder, output } = setup()
+    const dirs = (svc as unknown as { d: DictationDeps }).d.dirs
+    rmSync(dirs.temp, { recursive: true, force: true })
+    expect(existsSync(dirs.temp)).toBe(false)
+    await speak(svc, recorder)
+    expect(output.insertExternal).toHaveBeenCalledWith('Привет мир.', expect.anything())
+    expect(svc.getState().phase).toBe('success')
   })
 })

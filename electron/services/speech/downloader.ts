@@ -3,7 +3,8 @@
  * atomic rename (`.part` → final). TLS verification is always on (Node defaults).
  */
 import { createWriteStream } from 'node:fs'
-import { rename, rm } from 'node:fs/promises'
+import { mkdir, rename, rm } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import { createHash } from 'node:crypto'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -55,6 +56,7 @@ const STALL_MS = 30_000
 export async function downloadFile(o: DownloadOptions): Promise<DownloadResult> {
   const f = o.fetchImpl ?? fetch
   const part = `${o.dest}.part`
+  await mkdir(dirname(o.dest), { recursive: true })
   let hash = createHash('sha256')
   let received = 0
   let total: number | null = o.expectedSize ?? null

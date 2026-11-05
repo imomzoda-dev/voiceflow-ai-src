@@ -1,4 +1,4 @@
-# Feature status — VoiceFlow AI 1.0.4
+# Feature status — VoiceFlow AI 1.0.5
 
 Checked on **Windows 11 x64** (Electron 45.2, Node 24) on 2026-11-04. **Nothing has been run on macOS yet.**
 
@@ -73,6 +73,12 @@ What the unit tests cover:
 | Text always left on the clipboard (also when pasting fails) | ✅ Unit tests |
 | whisper-server engine (model stays loaded, prewarmed while choosing) | ✅ Real runs: ready in ≈0.5 s, ≈1.8 s per phrase with the Base model on CPU |
 | Installer shows "Update x → y" over an installed version | ✅ Seen on this PC: "Обновление VoiceFlow AI — Версия 0.1.0 → 1.0.1" with «Обновить» (closed without installing) |
+
+## 1.0.5
+
+| Fix | Status |
+|---|---|
+| Fixed: after a few dictations every one failed with "Something went wrong" — a disk cleaner deleted the app's folder in %TEMP% while it ran (`ENOENT … .wav`). Working files now live in the app's own data folder, the folder is recreated before every write, and leftovers older than a day are removed at start | ✅ Unit test that deletes the folder mid-run (fails without the fix with the same ENOENT); real-speech E2E (ru, tg) |
 
 ## 1.0.4
 
